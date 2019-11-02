@@ -168,14 +168,14 @@ EXPORTS
   PyEval_EvalFrame=python38.PyEval_EvalFrame
   PyEval_EvalFrameEx=python38.PyEval_EvalFrameEx
   PyEval_GetBuiltins=python38.PyEval_GetBuiltins
-  PyEval_GetCallStats=python38.PyEval_GetCallStats
+  ;PyEval_GetCallStats=python38.PyEval_GetCallStats
   PyEval_GetFrame=python38.PyEval_GetFrame
   PyEval_GetFuncDesc=python38.PyEval_GetFuncDesc
   PyEval_GetFuncName=python38.PyEval_GetFuncName
   PyEval_GetGlobals=python38.PyEval_GetGlobals
   PyEval_GetLocals=python38.PyEval_GetLocals
   PyEval_InitThreads=python38.PyEval_InitThreads
-  PyEval_ReInitThreads=python38.PyEval_ReInitThreads
+  ;PyEval_ReInitThreads=python38.PyEval_ReInitThreads
   PyEval_ReleaseLock=python38.PyEval_ReleaseLock
   PyEval_ReleaseThread=python38.PyEval_ReleaseThread
   PyEval_RestoreThread=python38.PyEval_RestoreThread
@@ -380,7 +380,7 @@ EXPORTS
   PyModule_NewObject=python38.PyModule_NewObject
   PyModule_SetDocString=python38.PyModule_SetDocString
   PyModule_Type=python38.PyModule_Type DATA
-  PyNullImporter_Type=python38.PyNullImporter_Type DATA
+  ;PyNullImporter_Type=python38.PyNullImporter_Type DATA
   PyNumber_Absolute=python38.PyNumber_Absolute
   PyNumber_Add=python38.PyNumber_Add
   PyNumber_And=python38.PyNumber_And
@@ -427,7 +427,7 @@ EXPORTS
   PyODict_SetItem=python38.PyODict_SetItem
   PyODict_Type=python38.PyODict_Type DATA
   PyOS_AfterFork=python38.PyOS_AfterFork
-  PyOS_CheckStack=python38.PyOS_CheckStack
+  ;PyOS_CheckStack=python38.PyOS_CheckStack
   PyOS_FSPath=python38.PyOS_FSPath
   PyOS_InitInterrupts=python38.PyOS_InitInterrupts
   PyOS_InputHook=python38.PyOS_InputHook DATA
@@ -540,7 +540,7 @@ EXPORTS
   PySlice_New=python38.PySlice_New
   PySlice_Type=python38.PySlice_Type DATA
   PySlice_Unpack=python38.PySlice_Unpack
-  PySortWrapper_Type=python38.PySortWrapper_Type DATA
+  ;PySortWrapper_Type=python38.PySortWrapper_Type DATA
   PyInterpreterState_GetID=python38.PyInterpreterState_GetID
   PyState_AddModule=python38.PyState_AddModule
   PyState_FindModule=python38.PyState_FindModule
@@ -780,8 +780,8 @@ EXPORTS
   _PyState_AddModule=python38._PyState_AddModule
   _PyThreadState_Init=python38._PyThreadState_Init
   _PyThreadState_Prealloc=python38._PyThreadState_Prealloc
-  _PyTrash_delete_later=python38._PyTrash_delete_later DATA
-  _PyTrash_delete_nesting=python38._PyTrash_delete_nesting DATA
+  ;_PyTrash_delete_later=python38._PyTrash_delete_later DATA
+  ;_PyTrash_delete_nesting=python38._PyTrash_delete_nesting DATA
   _PyTrash_deposit_object=python38._PyTrash_deposit_object
   _PyTrash_destroy_chain=python38._PyTrash_destroy_chain
   _PyTrash_thread_deposit_object=python38._PyTrash_thread_deposit_object

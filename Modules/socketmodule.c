@@ -369,6 +369,7 @@ static FlagRuntimeInfo win_runtime_flags[] = {
 static void
 remove_unusable_flags(PyObject *m)
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     PyObject *dict;
     OSVERSIONINFOEX info;
     DWORDLONG dwlConditionMask;
@@ -414,6 +415,7 @@ remove_unusable_flags(PyObject *m)
             }
         }
     }
+#endif
 }
 
 #endif
@@ -2684,11 +2686,13 @@ sock_accept(PySocketSockObject *s, PyObject *Py_UNUSED(ignored))
     newfd = ctx.result;
 
 #ifdef MS_WINDOWS
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     if (!SetHandleInformation((HANDLE)newfd, HANDLE_FLAG_INHERIT, 0)) {
         PyErr_SetFromWindowsErr(0);
         SOCKETCLOSE(newfd);
         goto finally;
     }
+#endif
 #else
 
 #if defined(HAVE_ACCEPT4) && defined(SOCK_CLOEXEC)
@@ -5228,11 +5232,13 @@ sock_initobj(PyObject *self, PyObject *args, PyObject *kwds)
         }
 
         if (!support_wsa_no_inherit) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
             if (!SetHandleInformation((HANDLE)fd, HANDLE_FLAG_INHERIT, 0)) {
                 closesocket(fd);
                 PyErr_SetFromWindowsErr(0);
                 return -1;
             }
+#endif
         }
 #else
         /* UNIX */
@@ -5343,7 +5349,7 @@ socket_gethostname(PyObject *self, PyObject *unused)
         return NULL;
     }
 
-#ifdef MS_WINDOWS
+#if defined(MS_WINDOWS) && WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     /* Don't use winsock's gethostname, as this returns the ANSI
        version of the hostname, whereas we need a Unicode string.
        Otherwise, gethostname apparently also returns the DNS name. */
@@ -5936,11 +5942,13 @@ socket_dup(PyObject *self, PyObject *fdobj)
     if (newfd == INVALID_SOCKET)
         return set_error();
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     if (!SetHandleInformation((HANDLE)newfd, HANDLE_FLAG_INHERIT, 0)) {
         closesocket(newfd);
         PyErr_SetFromWindowsErr(0);
         return NULL;
     }
+#endif
 #else
     /* On UNIX, dup can be used to duplicate the file descriptor of a socket */
     newfd = _Py_dup(fd);
@@ -6693,6 +6701,9 @@ socket_if_nameindex(PyObject *self, PyObject *arg)
         return NULL;
     }
 #ifdef MS_WINDOWS
+#ifdef MS_APP
+    return list;
+#else
     PMIB_IF_TABLE2 tbl;
     int ret;
     if ((ret = GetIfTable2Ex(MibIfTableRaw, &tbl)) != NO_ERROR) {
@@ -6721,6 +6732,7 @@ socket_if_nameindex(PyObject *self, PyObject *arg)
     }
     FreeMibTable(tbl);
     return list;
+#endif
 #else
     int i;
     struct if_nameindex *ni;
@@ -6780,6 +6792,9 @@ socket_if_nametoindex(PyObject *self, PyObject *args)
 #else
     unsigned long index;
 #endif
+#ifdef MS_APP
+    Py_RETURN_NOTIMPLEMENTED;
+#else
     if (!PyArg_ParseTuple(args, "O&:if_nametoindex",
                           PyUnicode_FSConverter, &oname))
         return NULL;
@@ -6793,6 +6808,7 @@ socket_if_nametoindex(PyObject *self, PyObject *args)
     }
 
     return PyLong_FromUnsignedLong(index);
+#endif
 }
 
 PyDoc_STRVAR(if_nametoindex_doc,
@@ -6808,6 +6824,9 @@ socket_if_indextoname(PyObject *self, PyObject *arg)
 #else
     unsigned long index;
 #endif
+#ifdef MS_APP
+    Py_RETURN_NOTIMPLEMENTED;
+#else
     char name[IF_NAMESIZE + 1];
 
     index = PyLong_AsUnsignedLong(arg);
@@ -6820,6 +6839,7 @@ socket_if_indextoname(PyObject *self, PyObject *arg)
     }
 
     return PyUnicode_DecodeFSDefault(name);
+#endif
 }
 
 PyDoc_STRVAR(if_indextoname_doc,
@@ -7068,7 +7088,11 @@ PyInit__socket(void)
 
 #ifdef MS_WINDOWS
     if (support_wsa_no_inherit == -1) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
         support_wsa_no_inherit = IsWindows7SP1OrGreater();
+#else
+		support_wsa_no_inherit = 1;
+#endif
     }
 #endif
 

@@ -31,6 +31,11 @@ enum {
     DEFAULT_PROTOCOL = 4
 };
 
+#ifdef UNICODE
+#define REDEFINE_UNICODE 1
+#undef UNICODE
+#endif
+
 /* Pickle opcodes. These must be kept updated with pickle.py.
    Extensive docs are in pickletools.py. */
 enum opcode {
@@ -111,6 +116,11 @@ enum opcode {
     NEXT_BUFFER      = '\x97',
     READONLY_BUFFER  = '\x98'
 };
+
+#ifdef REDEFINE_UNICODE
+#define UNICODE 1
+#undef REDEFINE_UNICODE
+#endif
 
 enum {
    /* Keep in synch with pickle.Pickler._BATCHSIZE.  This is how many elements

@@ -183,6 +183,7 @@ corresponding Unix manual entries for more information on calls.");
 #include <process.h>
 #else
 #ifdef _MSC_VER         /* Microsoft compiler */
+#ifdef MS_DESKTOP
 #define HAVE_GETPPID    1
 #define HAVE_GETLOGIN   1
 #define HAVE_SPAWNV     1
@@ -194,6 +195,7 @@ corresponding Unix manual entries for more information on calls.");
 #define HAVE_CWAIT      1
 #define HAVE_FSYNC      1
 #define fsync _commit
+#endif
 #else
 /* Unix functions that the configure script doesn't check for */
 #ifndef __VXWORKS__
@@ -312,6 +314,7 @@ extern char        *ctermid_r(char *);
 #include "osdefs.h"
 #include <malloc.h>
 #include <windows.h>
+#include <winioctl.h>
 #include <shellapi.h>   /* for ShellExecute() */
 #include <lmcons.h>     /* for UNLEN */
 #define HAVE_SYMLINK
@@ -501,9 +504,19 @@ PyOS_AfterFork(void)
 
 #ifdef MS_WINDOWS
 /* defined in fileutils.c */
-void _Py_time_t_to_FILE_TIME(time_t, int, FILETIME *);
-void _Py_attribute_data_to_stat(BY_HANDLE_FILE_INFORMATION *,
-                                            ULONG, struct _Py_stat_struct *);
+PyAPI_FUNC(void)
+_Py_attribute_data_to_stat(FILE_BASIC_INFO* basic_info,
+  FILE_STANDARD_INFO* standard_info,
+  ULONG reparse_tag,
+  struct _Py_stat_struct* result);
+  PyAPI_FUNC(void) _Py_time_t_to_FILE_TIME(time_t, int, FILETIME *);
+PyAPI_FUNC(void) _Py_find_data_to_stat(WIN32_FIND_DATAW *,
+                                            struct _Py_stat_struct *);
+PyAPI_FUNC(HANDLE) _Py_win_create_file(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES,
+										DWORD, DWORD, HANDLE);
+PyAPI_FUNC(int) _Py_stat_from_file_handle(HANDLE h,
+											struct _Py_stat_struct* result, BOOL set_ino);
+
 #endif
 
 
@@ -1627,27 +1640,8 @@ win32_wchdir(LPCWSTR path)
 #define HAVE_STRUCT_STAT_ST_FILE_ATTRIBUTES 1
 #define HAVE_STRUCT_STAT_ST_REPARSE_TAG 1
 
-static void
-find_data_to_file_info(WIN32_FIND_DATAW *pFileData,
-                       BY_HANDLE_FILE_INFORMATION *info,
-                       ULONG *reparse_tag)
-{
-    memset(info, 0, sizeof(*info));
-    info->dwFileAttributes = pFileData->dwFileAttributes;
-    info->ftCreationTime   = pFileData->ftCreationTime;
-    info->ftLastAccessTime = pFileData->ftLastAccessTime;
-    info->ftLastWriteTime  = pFileData->ftLastWriteTime;
-    info->nFileSizeHigh    = pFileData->nFileSizeHigh;
-    info->nFileSizeLow     = pFileData->nFileSizeLow;
-/*  info->nNumberOfLinks   = 1; */
-    if (pFileData->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-        *reparse_tag = pFileData->dwReserved0;
-    else
-        *reparse_tag = 0;
-}
-
 static BOOL
-attributes_from_dir(LPCWSTR pszFile, BY_HANDLE_FILE_INFORMATION *info, ULONG *reparse_tag)
+attributes_from_dir(LPCWSTR pszFile, struct _Py_stat_struct *result, ULONG *reparse_tag)
 {
     HANDLE hFindFile;
     WIN32_FIND_DATAW FileData;
@@ -1674,7 +1668,7 @@ attributes_from_dir(LPCWSTR pszFile, BY_HANDLE_FILE_INFORMATION *info, ULONG *re
         return FALSE;
     }
     FindClose(hFindFile);
-    find_data_to_file_info(&FileData, info, reparse_tag);
+    _Py_find_data_to_stat(&FileData, result);
     return TRUE;
 }
 
@@ -1683,7 +1677,6 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
                  BOOL traverse)
 {
     HANDLE hFile;
-    BY_HANDLE_FILE_INFORMATION fileInfo;
     FILE_ATTRIBUTE_TAG_INFO tagInfo = { 0 };
     DWORD fileType, error;
     BOOL isUnhandledTag = FALSE;
@@ -1695,7 +1688,7 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
         flags |= FILE_FLAG_OPEN_REPARSE_POINT;
     }
 
-    hFile = CreateFileW(path, access, 0, NULL, OPEN_EXISTING, flags, NULL);
+    hFile = _Py_win_create_file(path, access, 0, NULL, OPEN_EXISTING, flags, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         /* Either the path doesn't exist, or the caller lacks access. */
         error = GetLastError();
@@ -1703,12 +1696,12 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
         case ERROR_ACCESS_DENIED:     /* Cannot sync or read attributes. */
         case ERROR_SHARING_VIOLATION: /* It's a paging file. */
             /* Try reading the parent directory. */
-            if (!attributes_from_dir(path, &fileInfo, &tagInfo.ReparseTag)) {
+            if (!attributes_from_dir(path, result, &tagInfo.ReparseTag)) {
                 /* Cannot read the parent directory. */
                 SetLastError(error);
                 return -1;
             }
-            if (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            if (result->st_file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 if (traverse ||
                     !IsReparseTagNameSurrogate(tagInfo.ReparseTag)) {
                     /* The stat call has to traverse but cannot, so fail. */
@@ -1720,7 +1713,7 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
 
         case ERROR_INVALID_PARAMETER:
             /* \\.\con requires read or write access. */
-            hFile = CreateFileW(path, access | GENERIC_READ,
+            hFile = _Py_win_create_file(path, access | GENERIC_READ,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                         OPEN_EXISTING, flags, NULL);
             if (hFile == INVALID_HANDLE_VALUE) {
@@ -1734,7 +1727,7 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
             if (traverse) {
                 traverse = FALSE;
                 isUnhandledTag = TRUE;
-                hFile = CreateFileW(path, access, 0, NULL, OPEN_EXISTING,
+                hFile = _Py_win_create_file(path, access, 0, NULL, OPEN_EXISTING,
                             flags | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
             }
             if (hFile == INVALID_HANDLE_VALUE) {
@@ -1808,25 +1801,13 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
             }
         }
 
-        if (!GetFileInformationByHandle(hFile, &fileInfo)) {
-            switch (GetLastError()) {
-            case ERROR_INVALID_PARAMETER:
-            case ERROR_INVALID_FUNCTION:
-            case ERROR_NOT_SUPPORTED:
-                /* Volumes and physical disks are block devices, e.g.
-                   \\.\C: and \\.\PhysicalDrive0. */
-                memset(result, 0, sizeof(*result));
-                result->st_mode = 0x6000; /* S_IFBLK */
-                goto cleanup;
-            }
+        if (_Py_stat_from_file_handle(hFile, result, FALSE)) {
             retval = -1;
             goto cleanup;
         }
     }
 
-    _Py_attribute_data_to_stat(&fileInfo, tagInfo.ReparseTag, result);
-
-    if (!(fileInfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+    if (!(result->st_mode & _S_IFDIR)) {
         /* Fix the file execute permissions. This hack sets S_IEXEC if
            the filename has an extension that is commonly used by files
            that CreateProcessW can execute. A real implementation calls
@@ -3628,12 +3609,16 @@ os_link_impl(PyObject *module, path_t *src, path_t *dst, int src_dir_fd,
     }
 
 #ifdef MS_WINDOWS
+#ifdef MS_APP
+	Py_RETURN_NOTIMPLEMENTED;
+#else
     Py_BEGIN_ALLOW_THREADS
     result = CreateHardLinkW(dst->wide, src->wide, NULL);
     Py_END_ALLOW_THREADS
 
     if (!result)
         return path_error2(src, dst);
+#endif
 #else
     Py_BEGIN_ALLOW_THREADS
 #ifdef HAVE_LINKAT
@@ -3960,7 +3945,7 @@ os__getfinalpathname_impl(PyObject *module, path_t *path)
     PyObject *result;
 
     Py_BEGIN_ALLOW_THREADS
-    hFile = CreateFileW(
+    hFile = _Py_win_create_file(
         path->wide,
         0, /* desired access */
         0, /* share mode */
@@ -4031,6 +4016,9 @@ static PyObject *
 os__getvolumepathname_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=804c63fd13a1330b input=722b40565fa21552]*/
 {
+#ifdef MS_APP
+	Py_RETURN_NOTIMPLEMENTED;
+#else
     PyObject *result;
     wchar_t *mountpath=NULL;
     size_t buflen;
@@ -4064,6 +4052,7 @@ os__getvolumepathname_impl(PyObject *module, path_t *path)
 exit:
     PyMem_Free(mountpath);
     return result;
+#endif
 }
 
 
@@ -5001,7 +4990,7 @@ os_utime_impl(PyObject *module, path_t *path, PyObject *times, PyObject *ns,
 
 #ifdef MS_WINDOWS
     Py_BEGIN_ALLOW_THREADS
-    hFile = CreateFileW(path->wide, FILE_WRITE_ATTRIBUTES, 0,
+    hFile = _Py_win_create_file(path->wide, FILE_WRITE_ATTRIBUTES, 0,
                         NULL, OPEN_EXISTING,
                         FILE_FLAG_BACKUP_SEMANTICS, NULL);
     Py_END_ALLOW_THREADS
@@ -5917,6 +5906,9 @@ static PyObject *
 os_spawnv_impl(PyObject *module, int mode, path_t *path, PyObject *argv)
 /*[clinic end generated code: output=71cd037a9d96b816 input=43224242303291be]*/
 {
+#ifdef MS_APP
+	Py_RETURN_NOTIMPLEMENTED;
+#else
     EXECV_CHAR **argvlist;
     int i;
     Py_ssize_t argc;
@@ -5997,6 +5989,7 @@ os_spawnv_impl(PyObject *module, int mode, path_t *path, PyObject *argv)
         return posix_error();
     else
         return Py_BuildValue(_Py_PARSE_INTPTR, spawnval);
+#endif
 }
 
 /*[clinic input]
@@ -6929,7 +6922,7 @@ static PyObject *
 os_getpid_impl(PyObject *module)
 /*[clinic end generated code: output=9ea6fdac01ed2b3c input=5a9a00f0ab68aa00]*/
 {
-    return PyLong_FromPid(getpid());
+    return PyLong_FromPid(GetCurrentProcessId());
 }
 #endif /* HAVE_GETPID */
 
@@ -7261,6 +7254,9 @@ os_setpgrp_impl(PyObject *module)
 static PyObject*
 win32_getppid()
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM)
+	return PyLong_FromPid((pid_t)GetCurrentProcessId());
+#else
     HANDLE snapshot;
     pid_t mypid;
     PyObject* result = NULL;
@@ -7294,6 +7290,7 @@ win32_getppid()
     CloseHandle(snapshot);
 
     return result;
+#endif
 }
 #endif /*MS_WINDOWS*/
 
@@ -7333,6 +7330,7 @@ os_getlogin_impl(PyObject *module)
 {
     PyObject *result = NULL;
 #ifdef MS_WINDOWS
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     wchar_t user_name[UNLEN + 1];
     DWORD num_chars = Py_ARRAY_LENGTH(user_name);
 
@@ -7342,6 +7340,9 @@ os_getlogin_impl(PyObject *module)
     }
     else
         result = PyErr_SetFromWindowsErr(GetLastError());
+#else
+	result = PyUnicode_FromWideChar(L"N/A", 4);
+#endif
 #else
     char *name;
     int old_errno = errno;
@@ -8034,7 +8035,7 @@ os_readlink_impl(PyObject *module, path_t *path, int dir_fd)
 
     /* First get a handle to the reparse point */
     Py_BEGIN_ALLOW_THREADS
-    reparse_point_handle = CreateFileW(
+    reparse_point_handle = _Py_win_create_file(
         path->wide,
         0,
         0,
@@ -8218,6 +8219,7 @@ os_symlink_impl(PyObject *module, path_t *src, path_t *dst,
     }
 
 #ifdef MS_WINDOWS
+#ifdef MS_DESKTOP
 
     if (windows_has_symlink_unprivileged_flag) {
         /* Allow non-admin symlinks if system allows it. */
@@ -8262,7 +8264,9 @@ os_symlink_impl(PyObject *module, path_t *src, path_t *dst,
 
     if (!result)
         return path_error2(src, dst);
-
+#else
+    Py_RETURN_NOTIMPLEMENTED;
+#endif
 #else
 
     if ((src->narrow && dst->wide) || (src->wide && dst->narrow)) {
@@ -11788,6 +11792,9 @@ static HINSTANCE (CALLBACK *Py_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR,
 static int
 check_ShellExecute()
 {
+#ifdef MS_APP
+	return FALSE;
+#else
     HINSTANCE hShell32;
 
     /* only recheck */
@@ -11808,6 +11815,7 @@ check_ShellExecute()
         Py_END_ALLOW_THREADS
     }
     return has_ShellExecute;
+#endif
 }
 
 
@@ -12461,9 +12469,15 @@ os_cpu_count_impl(PyObject *module)
 {
     int ncpu = 0;
 #ifdef MS_WINDOWS
+#ifdef MS_DESKTOP
     /* Declare prototype here to avoid pulling in all of the Win7 APIs in 3.8 */
     DWORD WINAPI GetActiveProcessorCount(WORD group);
     ncpu = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+#else
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	ncpu = sysinfo.dwNumberOfProcessors;
+#endif
 #elif defined(__hpux)
     ncpu = mpctl(MPC_GETNUMSPUS, NULL, NULL);
 #elif defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_ONLN)
@@ -12545,6 +12559,7 @@ static int
 os_get_handle_inheritable_impl(PyObject *module, intptr_t handle)
 /*[clinic end generated code: output=36be5afca6ea84d8 input=cfe99f9c05c70ad1]*/
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     DWORD flags;
 
     if (!GetHandleInformation((HANDLE)handle, &flags)) {
@@ -12553,6 +12568,9 @@ os_get_handle_inheritable_impl(PyObject *module, intptr_t handle)
     }
 
     return flags & HANDLE_FLAG_INHERIT;
+#else
+	return 0;
+#endif
 }
 
 
@@ -12570,12 +12588,16 @@ os_set_handle_inheritable_impl(PyObject *module, intptr_t handle,
                                int inheritable)
 /*[clinic end generated code: output=021d74fe6c96baa3 input=7a7641390d8364fc]*/
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     DWORD flags = inheritable ? HANDLE_FLAG_INHERIT : 0;
     if (!SetHandleInformation((HANDLE)handle, HANDLE_FLAG_INHERIT, flags)) {
         PyErr_SetFromWindowsErr(0);
         return NULL;
     }
     Py_RETURN_NONE;
+#else
+	Py_RETURN_NONE;
+#endif
 }
 #endif /* MS_WINDOWS */
 
@@ -13033,8 +13055,6 @@ static PyObject *
 DirEntry_from_find_data(path_t *path, WIN32_FIND_DATAW *dataW)
 {
     DirEntry *entry;
-    BY_HANDLE_FILE_INFORMATION file_info;
-    ULONG reparse_tag;
     wchar_t *joined_path;
 
     entry = PyObject_New(DirEntry, &DirEntryType);
@@ -13069,8 +13089,7 @@ DirEntry_from_find_data(path_t *path, WIN32_FIND_DATAW *dataW)
             goto error;
     }
 
-    find_data_to_file_info(dataW, &file_info, &reparse_tag);
-    _Py_attribute_data_to_stat(&file_info, reparse_tag, &entry->win32_lstat);
+    _Py_find_data_to_stat(dataW, &entry->win32_lstat);
 
     return (PyObject *)entry;
 
@@ -13693,9 +13712,10 @@ error:
 /* bpo-36085: Helper functions for managing DLL search directories
  * on win32
  */
-
+#ifdef MS_DESKTOP
 typedef DLL_DIRECTORY_COOKIE (WINAPI *PAddDllDirectory)(PCWSTR newDirectory);
 typedef BOOL (WINAPI *PRemoveDllDirectory)(DLL_DIRECTORY_COOKIE cookie);
+#endif
 
 /*[clinic input]
 os._add_dll_directory
@@ -13712,37 +13732,41 @@ Returns an opaque value that may be passed to os.remove_dll_directory
 to remove this directory from the search path.
 [clinic start generated code]*/
 
-static PyObject *
-os__add_dll_directory_impl(PyObject *module, path_t *path)
+static PyObject*
+os__add_dll_directory_impl(PyObject* module, path_t* path)
 /*[clinic end generated code: output=80b025daebb5d683 input=1de3e6c13a5808c8]*/
 {
-    HMODULE hKernel32;
-    PAddDllDirectory AddDllDirectory;
-    DLL_DIRECTORY_COOKIE cookie = 0;
-    DWORD err = 0;
+#ifdef MS_APP
+  Py_RETURN_NONE;
+#else
+  HMODULE hKernel32;
+  PAddDllDirectory AddDllDirectory;
+  DLL_DIRECTORY_COOKIE cookie = 0;
+  DWORD err = 0;
 
-    if (PySys_Audit("os.add_dll_directory", "(O)", path->object) < 0) {
-        return NULL;
-    }
+  if (PySys_Audit("os.add_dll_directory", "(O)", path->object) < 0) {
+    return NULL;
+  }
 
-    /* For Windows 7, we have to load this. As this will be a fairly
-       infrequent operation, just do it each time. Kernel32 is always
-       loaded. */
-    Py_BEGIN_ALLOW_THREADS
+  /* For Windows 7, we have to load this. As this will be a fairly
+     infrequent operation, just do it each time. Kernel32 is always
+     loaded. */
+  Py_BEGIN_ALLOW_THREADS
     if (!(hKernel32 = GetModuleHandleW(L"kernel32")) ||
-        !(AddDllDirectory = (PAddDllDirectory)GetProcAddress(
-            hKernel32, "AddDllDirectory")) ||
-        !(cookie = (*AddDllDirectory)(path->wide))) {
-        err = GetLastError();
+      !(AddDllDirectory = (PAddDllDirectory)GetProcAddress(
+        hKernel32, "AddDllDirectory")) ||
+      !(cookie = (*AddDllDirectory)(path->wide))) {
+      err = GetLastError();
     }
-    Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 
     if (err) {
-        return win32_error_object_err("add_dll_directory",
-                                      path->object, err);
+      return win32_error_object_err("add_dll_directory",
+        path->object, err);
     }
 
-    return PyCapsule_New(cookie, "DLL directory cookie", NULL);
+  return PyCapsule_New(cookie, "DLL directory cookie", NULL);
+#endif
 }
 
 /*[clinic input]
@@ -13757,46 +13781,50 @@ os.add_dll_directory. You can only remove directories that you added
 yourself.
 [clinic start generated code]*/
 
-static PyObject *
-os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
+static PyObject*
+os__remove_dll_directory_impl(PyObject* module, PyObject* cookie)
 /*[clinic end generated code: output=594350433ae535bc input=c1d16a7e7d9dc5dc]*/
 {
-    HMODULE hKernel32;
-    PRemoveDllDirectory RemoveDllDirectory;
-    DLL_DIRECTORY_COOKIE cookieValue;
-    DWORD err = 0;
+#ifdef MS_APP
+  Py_RETURN_NONE;
+#else
+  HMODULE hKernel32;
+  PRemoveDllDirectory RemoveDllDirectory;
+  DLL_DIRECTORY_COOKIE cookieValue;
+  DWORD err = 0;
 
-    if (!PyCapsule_IsValid(cookie, "DLL directory cookie")) {
-        PyErr_SetString(PyExc_TypeError,
-            "Provided cookie was not returned from os.add_dll_directory");
-        return NULL;
-    }
+  if (!PyCapsule_IsValid(cookie, "DLL directory cookie")) {
+    PyErr_SetString(PyExc_TypeError,
+      "Provided cookie was not returned from os.add_dll_directory");
+    return NULL;
+  }
 
-    cookieValue = (DLL_DIRECTORY_COOKIE)PyCapsule_GetPointer(
-        cookie, "DLL directory cookie");
+  cookieValue = (DLL_DIRECTORY_COOKIE)PyCapsule_GetPointer(
+    cookie, "DLL directory cookie");
 
-    /* For Windows 7, we have to load this. As this will be a fairly
-       infrequent operation, just do it each time. Kernel32 is always
-       loaded. */
-    Py_BEGIN_ALLOW_THREADS
+  /* For Windows 7, we have to load this. As this will be a fairly
+     infrequent operation, just do it each time. Kernel32 is always
+     loaded. */
+  Py_BEGIN_ALLOW_THREADS
     if (!(hKernel32 = GetModuleHandleW(L"kernel32")) ||
-        !(RemoveDllDirectory = (PRemoveDllDirectory)GetProcAddress(
-            hKernel32, "RemoveDllDirectory")) ||
-        !(*RemoveDllDirectory)(cookieValue)) {
-        err = GetLastError();
+      !(RemoveDllDirectory = (PRemoveDllDirectory)GetProcAddress(
+        hKernel32, "RemoveDllDirectory")) ||
+      !(*RemoveDllDirectory)(cookieValue)) {
+      err = GetLastError();
     }
-    Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 
     if (err) {
-        return win32_error_object_err("remove_dll_directory",
-                                      NULL, err);
+      return win32_error_object_err("remove_dll_directory",
+        NULL, err);
     }
 
-    if (PyCapsule_SetName(cookie, NULL)) {
-        return NULL;
-    }
+  if (PyCapsule_SetName(cookie, NULL)) {
+    return NULL;
+  }
 
-    Py_RETURN_NONE;
+  Py_RETURN_NONE;
+#endif
 }
 
 #endif
@@ -14494,11 +14522,19 @@ all_ins(PyObject *m)
 #endif
 
 #ifdef MS_WINDOWS
+#  ifdef MS_DESKTOP
     if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS", LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)) return -1;
     if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_APPLICATION_DIR", LOAD_LIBRARY_SEARCH_APPLICATION_DIR)) return -1;
     if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_SYSTEM32", LOAD_LIBRARY_SEARCH_SYSTEM32)) return -1;
     if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_USER_DIRS", LOAD_LIBRARY_SEARCH_USER_DIRS)) return -1;
     if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR", LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)) return -1;
+#  else
+    if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS", 0x00001000)) return -1;
+    if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_APPLICATION_DIR", 0x00000200)) return -1;
+    if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_SYSTEM32", 0x00000800)) return -1;
+    if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_USER_DIRS", 0x00000400)) return -1;
+    if (PyModule_AddIntConstant(m, "_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR", 0x00000100)) return -1;
+#  endif
 #endif
 
     return 0;

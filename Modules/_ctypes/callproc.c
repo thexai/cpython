@@ -811,7 +811,7 @@ static int _call_function_pointer(int flags,
 {
     PyThreadState *_save = NULL; /* For Py_BLOCK_THREADS and Py_UNBLOCK_THREADS */
     PyObject *error_object = NULL;
-    int *space;
+    int *space = NULL;
     ffi_cif cif;
     int cc;
 #if defined(MS_WIN32) && !defined(DONT_USE_SEH)
@@ -903,13 +903,13 @@ static int _call_function_pointer(int flags,
     }
     if ((flags & FUNCFLAG_PYTHONAPI) == 0)
         Py_UNBLOCK_THREADS
-    if (flags & FUNCFLAG_USE_ERRNO) {
+    if (flags & FUNCFLAG_USE_ERRNO && space != NULL) {
         int temp = space[0];
         space[0] = errno;
         errno = temp;
     }
 #ifdef MS_WIN32
-    if (flags & FUNCFLAG_USE_LASTERROR) {
+    if (flags & FUNCFLAG_USE_LASTERROR && space != NULL) {
         int temp = space[1];
         space[1] = GetLastError();
         SetLastError(temp);
@@ -927,13 +927,13 @@ static int _call_function_pointer(int flags,
         ;
     }
 #endif
-    if (flags & FUNCFLAG_USE_LASTERROR) {
+    if (flags & FUNCFLAG_USE_LASTERROR && space != NULL) {
         int temp = space[1];
         space[1] = GetLastError();
         SetLastError(temp);
     }
 #endif
-    if (flags & FUNCFLAG_USE_ERRNO) {
+    if (flags & FUNCFLAG_USE_ERRNO && space != NULL) {
         int temp = space[0];
         space[0] = errno;
         errno = temp;
@@ -1046,6 +1046,7 @@ error:
 
 
 #ifdef MS_WIN32
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
 
 static PyObject *
 GetComError(HRESULT errcode, GUID *riid, IUnknown *pIunk)
@@ -1114,6 +1115,7 @@ GetComError(HRESULT errcode, GUID *riid, IUnknown *pIunk)
 
     return NULL;
 }
+#endif
 #endif
 
 #if (defined(__x86_64__) && (defined(__MINGW64__) || defined(__CYGWIN__))) || \
@@ -1288,9 +1290,11 @@ PyObject *_ctypes_callproc(PPROC pProc,
 
 #ifdef MS_WIN32
     if (iid && pIunk) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
         if (*(int *)resbuf & 0x80000000)
             retval = GetComError(*(HRESULT *)resbuf, iid, pIunk);
         else
+#endif
             retval = PyLong_FromLong(*(int *)resbuf);
     } else if (flags & FUNCFLAG_HRESULT) {
         if (*(int *)resbuf & 0x80000000)
@@ -1371,7 +1375,11 @@ static PyObject *load_library(PyObject *self, PyObject *args)
     /* bpo-36085: Limit DLL search directories to avoid pre-loading
      * attacks and enable use of the AddDllDirectory function.
      */
+#ifdef MS_DESKTOP
     hMod = LoadLibraryExW(name, NULL, (DWORD)load_flags);
+#else
+	hMod = LoadPackagedLibrary(name, 0);
+#endif
     err = hMod ? 0 : GetLastError();
     Py_END_ALLOW_THREADS
 

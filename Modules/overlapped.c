@@ -37,6 +37,10 @@
 
 #define T_HANDLE T_POINTER
 
+#if !defined(HasOverlappedIoCompleted)
+#define HasOverlappedIoCompleted(lpOverlapped) (lpOverlapped)->Internal != STATUS_PENDING
+#endif
+
 enum {TYPE_NONE, TYPE_NOT_STARTED, TYPE_READ, TYPE_READINTO, TYPE_WRITE,
       TYPE_ACCEPT, TYPE_CONNECT, TYPE_DISCONNECT, TYPE_CONNECT_NAMED_PIPE,
       TYPE_WAIT_NAMED_PIPE_AND_CONNECT, TYPE_TRANSMIT_FILE, TYPE_READ_FROM,
@@ -102,7 +106,6 @@ static LPFN_ACCEPTEX Py_AcceptEx = NULL;
 static LPFN_CONNECTEX Py_ConnectEx = NULL;
 static LPFN_DISCONNECTEX Py_DisconnectEx = NULL;
 static LPFN_TRANSMITFILE Py_TransmitFile = NULL;
-static BOOL (CALLBACK *Py_CancelIoEx)(HANDLE, LPOVERLAPPED) = NULL;
 
 #define GET_WSA_POINTER(s, x)                                           \
     (SOCKET_ERROR != WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER,    \
@@ -116,7 +119,6 @@ initialize_function_pointers(void)
     GUID GuidConnectEx = WSAID_CONNECTEX;
     GUID GuidDisconnectEx = WSAID_DISCONNECTEX;
     GUID GuidTransmitFile = WSAID_TRANSMITFILE;
-    HINSTANCE hKernel32;
     SOCKET s;
     DWORD dwBytes;
 
@@ -138,11 +140,6 @@ initialize_function_pointers(void)
 
     closesocket(s);
 
-    /* On WinXP we will have Py_CancelIoEx == NULL */
-    Py_BEGIN_ALLOW_THREADS
-    hKernel32 = GetModuleHandle("KERNEL32");
-    *(FARPROC *)&Py_CancelIoEx = GetProcAddress(hKernel32, "CancelIoEx");
-    Py_END_ALLOW_THREADS
     return 0;
 }
 
@@ -273,6 +270,9 @@ PyDoc_STRVAR(
 static PyObject *
 overlapped_RegisterWaitWithQueue(PyObject *self, PyObject *args)
 {
+#ifdef MS_APP
+  Py_RETURN_NOTIMPLEMENTED;
+#else
     HANDLE NewWaitObject;
     HANDLE Object;
     ULONG Milliseconds;
@@ -295,7 +295,8 @@ overlapped_RegisterWaitWithQueue(PyObject *self, PyObject *args)
     *pdata = data;
 
     if (!RegisterWaitForSingleObject(
-            &NewWaitObject, Object, PostToQueueCallback, pdata, Milliseconds,
+            &NewWaitObject, Object, (WAITORTIMERCALLBACK)PostToQueueCallback,
+            pdata, Milliseconds,
             WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE))
     {
         PyMem_RawFree(pdata);
@@ -303,6 +304,7 @@ overlapped_RegisterWaitWithQueue(PyObject *self, PyObject *args)
     }
 
     return Py_BuildValue(F_HANDLE, NewWaitObject);
+#endif
 }
 
 PyDoc_STRVAR(
@@ -313,6 +315,9 @@ PyDoc_STRVAR(
 static PyObject *
 overlapped_UnregisterWait(PyObject *self, PyObject *args)
 {
+#ifdef MS_APP
+  Py_RETURN_NOTIMPLEMENTED;
+#else
     HANDLE WaitHandle;
     BOOL ret;
 
@@ -326,6 +331,7 @@ overlapped_UnregisterWait(PyObject *self, PyObject *args)
     if (!ret)
         return SetFromWindowsErr(0);
     Py_RETURN_NONE;
+#endif
 }
 
 PyDoc_STRVAR(
@@ -336,6 +342,9 @@ PyDoc_STRVAR(
 static PyObject *
 overlapped_UnregisterWaitEx(PyObject *self, PyObject *args)
 {
+#ifdef MS_APP
+  Py_RETURN_NOTIMPLEMENTED;
+#else
     HANDLE WaitHandle, Event;
     BOOL ret;
 
@@ -349,6 +358,7 @@ overlapped_UnregisterWaitEx(PyObject *self, PyObject *args)
     if (!ret)
         return SetFromWindowsErr(0);
     Py_RETURN_NONE;
+#endif
 }
 
 /*
@@ -624,9 +634,6 @@ Overlapped_dealloc(OverlappedObject *self)
     if (!HasOverlappedIoCompleted(&self->overlapped) &&
         self->type != TYPE_NOT_STARTED)
     {
-        if (Py_CancelIoEx && Py_CancelIoEx(self->handle, &self->overlapped))
-            wait = TRUE;
-
         Py_BEGIN_ALLOW_THREADS
         ret = GetOverlappedResult(self->handle, &self->overlapped,
                                   &bytes, wait);
@@ -735,10 +742,7 @@ Overlapped_cancel(OverlappedObject *self, PyObject *Py_UNUSED(ignored))
 
     if (!HasOverlappedIoCompleted(&self->overlapped)) {
         Py_BEGIN_ALLOW_THREADS
-        if (Py_CancelIoEx)
-            ret = Py_CancelIoEx(self->handle, &self->overlapped);
-        else
-            ret = CancelIo(self->handle);
+		ret = CancelIo(self->handle);
         Py_END_ALLOW_THREADS
     }
 
@@ -1447,6 +1451,17 @@ PyDoc_STRVAR(
     "ConnectPipe(addr) -> pipe_handle\n\n"
     "Connect to the pipe for asynchronous I/O (overlapped).");
 
+PyAPI_FUNC(HANDLE)
+_Py_win_create_file(
+	_In_ LPCWSTR lpFileName,
+	_In_ DWORD dwDesiredAccess,
+	_In_ DWORD dwShareMode,
+	_In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+	_In_ DWORD dwCreationDisposition,
+	_In_ DWORD dwFlagsAndAttributes,
+	_In_opt_ HANDLE hTemplateFile
+);
+
 static PyObject *
 overlapped_ConnectPipe(PyObject *self, PyObject *args)
 {
@@ -1462,7 +1477,7 @@ overlapped_ConnectPipe(PyObject *self, PyObject *args)
         return NULL;
 
     Py_BEGIN_ALLOW_THREADS
-    PipeHandle = CreateFileW(Address,
+    PipeHandle = _Py_win_create_file(Address,
                              GENERIC_READ | GENERIC_WRITE,
                              0, NULL, OPEN_EXISTING,
                              FILE_FLAG_OVERLAPPED, NULL);

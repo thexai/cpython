@@ -143,7 +143,7 @@ static void _CallPythonObject(void *mem,
     PyObject *arglist = NULL;
     Py_ssize_t nArgs;
     PyObject *error_object = NULL;
-    int *space;
+    int *space = NULL;
     PyGILState_STATE state = PyGILState_Ensure();
 
     nArgs = PySequence_Length(converters);
@@ -240,13 +240,13 @@ static void _CallPythonObject(void *mem,
     }
 
 #ifdef MS_WIN32
-    if (flags & FUNCFLAG_USE_LASTERROR) {
+    if (flags & FUNCFLAG_USE_LASTERROR && space != NULL) {
         int temp = space[1];
         space[1] = GetLastError();
         SetLastError(temp);
     }
 #endif
-    if (flags & FUNCFLAG_USE_ERRNO) {
+    if (flags & FUNCFLAG_USE_ERRNO && space != NULL) {
         int temp = space[0];
         space[0] = errno;
         errno = temp;

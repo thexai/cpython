@@ -30,7 +30,7 @@ static PyObject * cfunction_vectorcall_O(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames);
 
 
-PyObject *
+PyAPI_FUNC(PyObject *)
 PyCFunction_New(PyMethodDef *ml, PyObject *self)
 {
     return PyCFunction_NewEx(ml, self, NULL);

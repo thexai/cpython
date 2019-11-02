@@ -3,6 +3,8 @@
 
 #include "Python.h"
 
+#include "pycore_pystate.h"
+
 #ifdef HAVE_DIRECT_H
 #include <direct.h>
 #endif
@@ -19,7 +21,7 @@ void _Py_DeactivateActCtx(ULONG_PTR cookie);
 #endif
 
 #ifdef _DEBUG
-#define PYD_DEBUG_SUFFIX "_d"
+#define PYD_DEBUG_SUFFIX ""
 #else
 #define PYD_DEBUG_SUFFIX ""
 #endif
@@ -173,6 +175,7 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
     dl_funcptr p;
     char funcname[258], *import_python;
     const wchar_t *wpathname;
+    const wchar_t* prefix_length;
 
     _Py_CheckPython3();
 
@@ -184,13 +187,15 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
 
     {
         HINSTANCE hDLL = NULL;
-        unsigned int old_mode;
 #if HAVE_SXS
         ULONG_PTR cookie = 0;
 #endif
 
         /* Don't display a message box when Python can't load a DLL */
+#ifdef MS_DESKTOP
+        unsigned int old_mode;
         old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+#endif
 
 #if HAVE_SXS
         cookie = _Py_ActivateActCtx();
@@ -200,16 +205,30 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
            AddDllDirectory function. We add SEARCH_DLL_LOAD_DIR to
            ensure DLLs adjacent to the PYD are preferred. */
         Py_BEGIN_ALLOW_THREADS
-        hDLL = LoadLibraryExW(wpathname, NULL,
-                              LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
-                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+#ifdef MS_DESKTOP
+          hDLL = LoadLibraryExW(wpathname, NULL,
+            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+#else
+        wchar_t* programPath = Py_GetProgramFullPath();
+
+        // LoadPackagedLibrary doesn't accept absolute paths so we need to trim
+        // the base path
+        prefix_length = wcsrchr(programPath, L'\\');
+        wpathname += (prefix_length - programPath);
+        wpathname++;
+
+        hDLL = LoadPackagedLibrary(wpathname, 0);
+#endif
         Py_END_ALLOW_THREADS
 #if HAVE_SXS
         _Py_DeactivateActCtx(cookie);
 #endif
 
         /* restore old error mode settings */
+#ifdef MS_DESKTOP
         SetErrorMode(old_mode);
+#endif
 
         if (hDLL==NULL){
             PyObject *message;
@@ -268,11 +287,7 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
             char buffer[256];
 
             PyOS_snprintf(buffer, sizeof(buffer),
-#ifdef _DEBUG
-                          "python%d%d_d.dll",
-#else
-                          "python%d%d.dll",
-#endif
+                          "python%d.%d.dll",
                           PY_MAJOR_VERSION,PY_MINOR_VERSION);
             import_python = GetPythonImport(hDLL);
 

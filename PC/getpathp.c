@@ -91,6 +91,7 @@
 
 #include <windows.h>
 #include <shlwapi.h>
+#include <PathCch.h>
 
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -258,6 +259,7 @@ static PPathCchCombineEx _PathCchCombineEx;
 static void
 join(wchar_t *buffer, const wchar_t *stuff)
 {
+#ifdef MS_DESKTOP
     if (_PathCchCombineEx_Initialized == 0) {
         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -279,12 +281,19 @@ join(wchar_t *buffer, const wchar_t *stuff)
             Py_FatalError("buffer overflow in getpathp.c's join()");
         }
     }
+#else
+	if (FAILED(PathCchCombineEx(buffer, MAXPATHLEN+1, buffer, stuff, 0))) {
+		Py_FatalError("buffer overflow in getpathp.c's join()");
+	}
+#endif
 }
 
+#ifdef MS_DESKTOP
 static int _PathCchCanonicalizeEx_Initialized = 0;
 typedef HRESULT(__stdcall *PPathCchCanonicalizeEx) (PWSTR pszPathOut, size_t cchPathOut,
     PCWSTR pszPathIn, unsigned long dwFlags);
 static PPathCchCanonicalizeEx _PathCchCanonicalizeEx;
+#endif
 
 /* Call PathCchCanonicalizeEx(path): remove navigation elements such as "."
    and ".." to produce a direct, well-formed path. */
@@ -295,6 +304,7 @@ canonicalize(wchar_t *buffer, const wchar_t *path)
         return _PyStatus_NO_MEMORY();
     }
 
+#ifdef MS_DESKTOP
     if (_PathCchCanonicalizeEx_Initialized == 0) {
         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -317,6 +327,11 @@ canonicalize(wchar_t *buffer, const wchar_t *path)
             return INIT_ERR_BUFFER_OVERFLOW();
         }
     }
+#else
+	if (FAILED(PathCchCanonicalizeEx(buffer, MAXPATHLEN + 1, path, 0))) {
+      return INIT_ERR_BUFFER_OVERFLOW();
+	}
+#endif
     return _PyStatus_OK();
 }
 
@@ -385,6 +400,7 @@ extern const char *PyWin_DLLVersionString;
 static wchar_t *
 getpythonregpath(HKEY keyBase, int skipcore)
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
     HKEY newKey = 0;
     DWORD dataSize = 0;
     DWORD numKeys = 0;
@@ -533,6 +549,9 @@ done:
     }
     PyMem_RawFree(keyBuf);
     return retval;
+#else
+	return NULL;
+#endif
 }
 #endif /* Py_ENABLE_SHARED */
 
@@ -1137,7 +1156,7 @@ done:
    Return whether the DLL was found.
 */
 static int python3_checked = 0;
-static HANDLE hPython3;
+static HANDLE hPython3 = (HANDLE)NULL;
 int
 _Py_CheckPython3(void)
 {
@@ -1147,6 +1166,7 @@ _Py_CheckPython3(void)
     }
     python3_checked = 1;
 
+#ifdef MS_DESKTOP
     /* If there is a python3.dll next to the python3y.dll,
        use that DLL */
     if (!get_dllpath(py3path)) {
@@ -1161,6 +1181,10 @@ _Py_CheckPython3(void)
     /* If we can locate python3.dll in our application dir,
        use that DLL */
     hPython3 = LoadLibraryExW(PY3_DLLNAME, NULL, LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
+#else
+    join(py3path, PY3_DLLNAME);
+    hPython3 = LoadPackagedLibrary(py3path, 0);
+#endif
     if (hPython3 != NULL) {
         return 1;
     }
@@ -1170,7 +1194,11 @@ _Py_CheckPython3(void)
     wcscpy(py3path, Py_GetPrefix());
     if (py3path[0]) {
         join(py3path, L"DLLs\\" PY3_DLLNAME);
+#ifdef MS_DESKTOP
         hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+        hPython3 = LoadPackagedLibrary(py3path, 0);
+#endif
     }
     return hPython3 != NULL;
 }
