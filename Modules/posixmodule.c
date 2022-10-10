@@ -33,7 +33,11 @@
 
       FSCTL_GET_REPARSE_POINT is not exported with WIN32_LEAN_AND_MEAN. */
 #  include <windows.h>
-#  include <shlwapi.h>
+#  ifdef MS_DESKTOP
+#    include <shlwapi.h>
+#  else
+#    include <pathcch.h>
+#  endif
 #endif
 
 #include "pycore_ceval.h"     /* _PyEval_ReInitThreads() */
@@ -4089,7 +4093,11 @@ os__path_splitroot_impl(PyObject *module, path_t *path)
             end = &buffer[2];
         }
     } else {
+#ifdef MS_DESKTOP
         end = PathSkipRootW(buffer);
+#else
+        PathCchSkipRoot(buffer, &end);
+#endif
     }
     Py_END_ALLOW_THREADS
     if (!end || end == buffer) {

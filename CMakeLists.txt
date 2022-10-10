@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(python VERSION 3.8.5 LANGUAGES C CXX)
+project(python VERSION 3.8.15 LANGUAGES C CXX)
 # enable_language(ASM_MASM)
 
 find_package(zlib NO_MODULE REQUIRED)
