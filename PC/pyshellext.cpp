@@ -8,7 +8,9 @@
 
 #include <windows.h>
 #include <shlobj.h>
-#include <shlwapi.h>
+#ifdef MS_DESKTOP
+  #include <shlwapi.h>
+#endif
 #include <olectl.h>
 #include <strsafe.h>
 

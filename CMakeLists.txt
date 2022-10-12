@@ -448,7 +448,6 @@ target_link_libraries(python
     zlib::zlibstatic
     ws2_32.lib
     version.lib
-    shlwapi.lib
     Advapi32.lib
     Kernel32.lib
     bufferoverflowU.lib
@@ -503,7 +502,6 @@ target_link_libraries(python_cli
     python
     ws2_32.lib
     version.lib
-    shlwapi.lib
     Advapi32.lib
     Kernel32.lib
 )
@@ -562,7 +560,6 @@ target_link_libraries(python3dll
     python
     ws2_32.lib
     version.lib
-    shlwapi.lib
     Advapi32.lib
     Kernel32.lib
     WindowsApp.lib
@@ -640,7 +637,6 @@ macro(add_py_module)
       python
       ws2_32.lib
       version.lib
-      shlwapi.lib
       Advapi32.lib
       Kernel32.lib
       WindowsApp.lib

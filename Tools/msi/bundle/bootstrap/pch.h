@@ -19,7 +19,6 @@
 #include <msiquery.h>
 #include <objbase.h>
 #include <shlobj.h>
-#include <shlwapi.h>
 #include <stdlib.h>
 #include <strsafe.h>
 #include <stddef.h>

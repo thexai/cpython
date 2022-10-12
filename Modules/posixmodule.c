@@ -35,6 +35,7 @@
 #  include <windows.h>
 #  ifdef MS_DESKTOP
 #    include <shlwapi.h>
+#    pragma comment( lib,"shlwapi" )
 #  else
 #    include <pathcch.h>
 #  endif

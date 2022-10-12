@@ -90,7 +90,10 @@
 #endif
 
 #include <windows.h>
-#include <shlwapi.h>
+#ifdef MS_DESKTOP
+#  include <shlwapi.h>
+#  pragma comment( lib,"shlwapi" )
+#endif
 #include <PathCch.h>
 
 #ifdef HAVE_SYS_TYPES_H
