@@ -4156,6 +4156,27 @@ os_mkdir_impl(PyObject *module, path_t *path, int mode, int dir_fd)
     }
 
 #ifdef MS_WINDOWS
+
+#ifdef MS_APP
+    DWORD dwAttrib = GetFileAttributesW(path->wide);
+
+    // return quick if directory alredy exists
+    if (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
+        return path_error(path);
+
+    // create only in AppData
+    if (wcsstr(path->wide, L"AppData"))
+    {
+        Py_BEGIN_ALLOW_THREADS
+        result = CreateDirectoryW(path->wide, NULL);
+        Py_END_ALLOW_THREADS
+        if (!result)
+            return path_error(path);
+    }
+
+    Py_RETURN_NONE;
+#endif
+
     Py_BEGIN_ALLOW_THREADS
     result = CreateDirectoryW(path->wide, NULL);
     Py_END_ALLOW_THREADS

@@ -757,7 +757,7 @@ add_py_module(NAME _elementtree
     USE_PYEXPAT_CAPI
     XML_STATIC
   LIBRARIES
-    expat::libexpat
+    expat::expat
 )
 
 ## _hashlib
@@ -853,7 +853,7 @@ add_py_module(NAME pyexpat
   SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Modules/pyexpat.c
   LIBRARIES
-    expat::libexpat
+    expat::expat
 )
 
 ## unicodedata
