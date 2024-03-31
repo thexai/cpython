@@ -54,6 +54,7 @@ static PFN_RELEASEACTCTX pfnReleaseActCtx = NULL;
 
 void _LoadActCtxPointers()
 {
+#ifdef MS_DESKTOP
     HINSTANCE hKernel32 = GetModuleHandleW(L"kernel32.dll");
     if (hKernel32)
         pfnGetCurrentActCtx = (PFN_GETCURRENTACTCTX) GetProcAddress(hKernel32, "GetCurrentActCtx");
@@ -64,6 +65,7 @@ void _LoadActCtxPointers()
         pfnAddRefActCtx = (PFN_ADDREFACTCTX) GetProcAddress(hKernel32, "AddRefActCtx");
         pfnReleaseActCtx = (PFN_RELEASEACTCTX) GetProcAddress(hKernel32, "ReleaseActCtx");
     }
+#endif
 }
 
 ULONG_PTR _Py_ActivateActCtx()
