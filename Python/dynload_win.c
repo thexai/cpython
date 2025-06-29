@@ -8,6 +8,8 @@
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 
 #include "patchlevel.h"           // PY_MAJOR_VERSION
+#include "pycore_fileutils_windows.h"
+
 #include <windows.h>
 
 const char *_PyImport_DynLoadFiletab[] = {
@@ -108,7 +110,7 @@ static char *GetPythonImport (HINSTANCE hModule)
                 char *pch;
 
                 /* Don't claim that python3.dll is a Python DLL. */
-#ifdef _DEBUG
+#if 0
                 if (strcmp(import_name, "python3_d.dll") == 0) {
 #else
                 if (strcmp(import_name, "python3.dll") == 0) {
@@ -120,7 +122,7 @@ static char *GetPythonImport (HINSTANCE hModule)
                 /* Ensure python prefix is followed only
                    by numbers to the end of the basename */
                 pch = import_name + 6;
-#ifdef _DEBUG
+#if 0
                 while (*pch && pch[0] != '_' && pch[1] != 'd' && pch[2] != '.') {
 #else
                 while (*pch && *pch != '.') {
@@ -159,12 +161,16 @@ _Py_CheckPython3(void)
     static int python3_checked = 0;
     static HANDLE hPython3;
     #define MAXPATHLEN 512
-    wchar_t py3path[MAXPATHLEN+1];
     if (python3_checked) {
         return hPython3 != NULL;
     }
     python3_checked = 1;
 
+#ifndef MS_WINDOWS_DESKTOP
+    // LoadPackagedLibrary doesn't accept absolute paths so load dll name from current app dir
+    hPython3 = LoadPackagedLibrary(PY3_DLLNAME, 0);
+#else
+    wchar_t py3path[MAXPATHLEN + 1];
     /* If there is a python3.dll next to the python3y.dll,
        use that DLL */
     if (PyWin_DLLhModule && GetModuleFileNameW(PyWin_DLLhModule, py3path, MAXPATHLEN)) {
@@ -196,6 +202,8 @@ _Py_CheckPython3(void)
             hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
         }
     }
+#endif
+
     return hPython3 != NULL;
     #undef MAXPATHLEN
 }
@@ -227,14 +235,24 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
         old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
 #endif
 
+        Py_BEGIN_ALLOW_THREADS
+#ifndef MS_WINDOWS_DESKTOP
+        // UWP does not allow absolute paths due security restrictions.
+        // If path is contained inside process path (sub folder), use the relative path instead.
+        const wchar_t* rel_path = _Py_AbsolutePath_To_RelativePath(wpathname);
+        if (rel_path)
+            hDLL = LoadPackagedLibrary(rel_path, 0);
+        else
+            hDLL = LoadPackagedLibrary(wpathname, 0);
+#else
         /* bpo-36085: We use LoadLibraryEx with restricted search paths
            to avoid DLL preloading attacks and enable use of the
            AddDllDirectory function. We add SEARCH_DLL_LOAD_DIR to
            ensure DLLs adjacent to the PYD are preferred. */
-        Py_BEGIN_ALLOW_THREADS
         hDLL = LoadLibraryExW(wpathname, NULL,
                               LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
                               LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+#endif
         Py_END_ALLOW_THREADS
         PyMem_Free(wpathname);
 
@@ -300,7 +318,7 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
             char buffer[256];
 
             PyOS_snprintf(buffer, sizeof(buffer),
-#ifdef _DEBUG
+#if 0
                           "python%d%d_d.dll",
 #else
                           "python%d%d.dll",
