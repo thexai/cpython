@@ -95,7 +95,7 @@ WIN32 is still required for the locale module.
 #endif /* Py_BUILD_CORE || Py_BUILD_CORE_BUILTIN || Py_BUILD_CORE_MODULE */
 
 /* _DEBUG implies Py_DEBUG */
-#ifdef _DEBUG
+#if 0
 #  define Py_DEBUG 1
 #endif
 
@@ -318,7 +318,7 @@ Py_NO_ENABLE_SHARED to find out.  Also support MS_NO_COREDLL for b/w compat */
 #define HAVE_DECLSPEC_DLL
 
 /* For an MSVC DLL, we can nominate the .lib files used by extensions */
-#ifdef MS_COREDLL
+#if 0
 #       if !defined(Py_BUILD_CORE) && !defined(Py_BUILD_CORE_BUILTIN)
                 /* not building the core - must be an ext */
 #               if defined(_MSC_VER) && !defined(Py_NO_LINK_LIB)

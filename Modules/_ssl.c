@@ -38,6 +38,7 @@
 
 #ifdef MS_WINDOWS
 #  include <wincrypt.h>
+#  include "pycore_fileutils_windows.h"
 #endif
 
 #include "_ssl.h"
@@ -4792,6 +4793,40 @@ _add_ca_certs(PySSLContext *self, const void *data, Py_ssize_t len,
     return retval;
 }
 
+#if defined(MS_WINDOWS) && !defined(MS_WINDOWS_DESKTOP)
+static int _load_ca_cert_file(PySSLContext* self)
+{
+    int rc = -1;
+
+    const wchar_t* ca_cert_file = L"system\\certs\\cacert.pem";
+
+    HANDLE hFile = _Py_win_create_file(ca_cert_file, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    LARGE_INTEGER fileSize;
+    if (hFile != INVALID_HANDLE_VALUE && GetFileSizeEx(hFile, &fileSize)) {
+        char* data = (char*)LocalAlloc(0, fileSize.QuadPart);
+        if (data) {
+            char buffer[4096];
+            DWORD bytesRead;
+            DWORD pos = 0;
+            BOOL st;
+            do {
+                bytesRead = 0;
+                st = ReadFile(hFile, buffer, sizeof(buffer), &bytesRead, NULL);
+                memcpy(&data[pos], buffer, bytesRead);
+                pos += bytesRead;
+            } while (st && bytesRead > 0 && pos < fileSize.QuadPart);
+
+            assert(pos == fileSize.QuadPart);
+
+            rc = _add_ca_certs(self, data, fileSize.QuadPart, SSL_FILETYPE_PEM);
+            LocalFree(data);
+        }
+        CloseHandle(hFile);
+    }
+
+    return rc;
+}
+#endif
 
 /*[clinic input]
 @critical_section
@@ -4809,6 +4844,16 @@ _ssl__SSLContext_load_verify_locations_impl(PySSLContext *self,
                                             PyObject *cadata)
 /*[clinic end generated code: output=454c7e41230ca551 input=b178852b41618414]*/
 {
+#if defined(MS_WINDOWS) && !defined(MS_WINDOWS_DESKTOP)
+    int rc;
+    Py_BEGIN_ALLOW_THREADS
+        rc = _load_ca_cert_file(self);
+    Py_END_ALLOW_THREADS
+        if (rc == -1) {
+            return NULL;
+        }
+    Py_RETURN_NONE;
+#else
     PyObject *cafile_bytes = NULL, *capath_bytes = NULL;
     const char *cafile_buf = NULL, *capath_buf = NULL;
     int r = 0, ok = 1;
@@ -4920,6 +4965,7 @@ _ssl__SSLContext_load_verify_locations_impl(PySSLContext *self,
     } else {
         return NULL;
     }
+#endif
 }
 
 /*[clinic input]
@@ -4934,16 +4980,16 @@ static PyObject *
 _ssl__SSLContext_load_dh_params_impl(PySSLContext *self, PyObject *filepath)
 /*[clinic end generated code: output=dd74b3c524dd2723 input=832769a0734b8c4d]*/
 {
-    FILE *f;
-    DH *dh;
-
-#if defined(MS_WINDOWS) && defined(Py_DEBUG)
+#if defined(MS_WINDOWS_APP) && !defined(MS_WINDOWS_DESKTOP)
+    PyErr_SetString(PyExc_NotImplementedError, "load_dh_params: unavailable on UWP build");
+    return NULL;
+#elif defined(MS_WINDOWS) && defined(Py_DEBUG)
     PyErr_SetString(PyExc_NotImplementedError,
                     "load_dh_params: unavailable on Windows debug build");
     return NULL;
-#endif
-
-    f = Py_fopen(filepath, "rb");
+#else
+    FILE* f = Py_fopen(filepath, "rb");
+    DH* dh;
     if (f == NULL)
         return NULL;
 
@@ -4969,6 +5015,7 @@ _ssl__SSLContext_load_dh_params_impl(PySSLContext *self, PyObject *filepath)
     }
     DH_free(dh);
     Py_RETURN_NONE;
+#endif
 }
 
 /*[clinic input]
@@ -5101,6 +5148,15 @@ _ssl__SSLContext_set_default_verify_paths_impl(PySSLContext *self)
 /*[clinic end generated code: output=0bee74e6e09deaaa input=939a88e78f634119]*/
 {
     int rc;
+#if defined(MS_WINDOWS) && !defined(MS_WINDOWS_DESKTOP)
+    Py_BEGIN_ALLOW_THREADS
+        rc = _load_ca_cert_file(self);
+    Py_END_ALLOW_THREADS
+        if (rc == -1) {
+            return NULL;
+        }
+    Py_RETURN_NONE;
+#else
     Py_BEGIN_ALLOW_THREADS
     rc = SSL_CTX_set_default_verify_paths(self->ctx);
     Py_END_ALLOW_THREADS
@@ -5110,6 +5166,7 @@ _ssl__SSLContext_set_default_verify_paths_impl(PySSLContext *self)
         return NULL;
     }
     Py_RETURN_NONE;
+#endif
 }
 
 /*[clinic input]
