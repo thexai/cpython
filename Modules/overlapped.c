@@ -35,6 +35,12 @@
 
 #define T_HANDLE T_POINTER
 
+#include "internal/pycore_fileutils_windows.h"
+
+#if !defined(HasOverlappedIoCompleted)
+#define HasOverlappedIoCompleted(lpOverlapped) (lpOverlapped)->Internal != STATUS_PENDING
+#endif
+
 /*[python input]
 class pointer_converter(CConverter):
     format_unit = '"F_POINTER"'
@@ -359,6 +365,9 @@ _overlapped_RegisterWaitWithQueue_impl(PyObject *module, HANDLE Object,
                                        DWORD Milliseconds)
 /*[clinic end generated code: output=c2ace732e447fe45 input=2dd4efee44abe8ee]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     HANDLE NewWaitObject;
     struct PostCallbackData data = {CompletionPort, Overlapped}, *pdata;
 
@@ -381,6 +390,7 @@ _overlapped_RegisterWaitWithQueue_impl(PyObject *module, HANDLE Object,
     }
 
     return Py_BuildValue(F_HANDLE, NewWaitObject);
+#endif
 }
 
 /*[clinic input]
@@ -396,6 +406,9 @@ static PyObject *
 _overlapped_UnregisterWait_impl(PyObject *module, HANDLE WaitHandle)
 /*[clinic end generated code: output=ec90cd955a9a617d input=a56709544cb2df0f]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    Py_RETURN_NONE;
+#else
     BOOL ret;
 
     Py_BEGIN_ALLOW_THREADS
@@ -405,6 +418,7 @@ _overlapped_UnregisterWait_impl(PyObject *module, HANDLE WaitHandle)
     if (!ret)
         return SetFromWindowsErr(0);
     Py_RETURN_NONE;
+#endif
 }
 
 /*[clinic input]
@@ -422,6 +436,9 @@ _overlapped_UnregisterWaitEx_impl(PyObject *module, HANDLE WaitHandle,
                                   HANDLE Event)
 /*[clinic end generated code: output=2e3d84c1d5f65b92 input=953cddc1de50fab9]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    Py_RETURN_NONE;
+#else
     BOOL ret;
 
     Py_BEGIN_ALLOW_THREADS
@@ -431,6 +448,7 @@ _overlapped_UnregisterWaitEx_impl(PyObject *module, HANDLE WaitHandle,
     if (!ret)
         return SetFromWindowsErr(0);
     Py_RETURN_NONE;
+#endif
 }
 
 /*
@@ -1635,7 +1653,7 @@ _overlapped_Overlapped_ConnectPipe_impl(OverlappedObject *self,
     HANDLE PipeHandle;
 
     Py_BEGIN_ALLOW_THREADS
-    PipeHandle = CreateFileW(Address,
+    PipeHandle = _Py_win_create_file(Address,
                              GENERIC_READ | GENERIC_WRITE,
                              0, NULL, OPEN_EXISTING,
                              FILE_FLAG_OVERLAPPED, NULL);

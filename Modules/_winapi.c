@@ -40,6 +40,7 @@
 #include "pycore_pystate.h"       // _PyInterpreterState_GET
 #include "pycore_unicodeobject.h" // for Argument Clinic
 
+#include "pycore_fileutils_windows.h"
 
 #ifndef WINDOWS_LEAN_AND_MEAN
 #  define WINDOWS_LEAN_AND_MEAN
@@ -539,7 +540,7 @@ _winapi_CreateFile_impl(PyObject *module, LPCWSTR file_name,
     }
 
     Py_BEGIN_ALLOW_THREADS
-    handle = CreateFileW(file_name, desired_access,
+    handle = _Py_win_create_file(file_name, desired_access,
                          share_mode, security_attributes,
                          creation_disposition,
                          flags_and_attributes, template_file);
@@ -714,7 +715,7 @@ _winapi_CreateJunction_impl(PyObject *module, LPCWSTR src_path,
     if (!CreateDirectoryW(dst_path, NULL))
         goto cleanup;
 
-    junction = CreateFileW(dst_path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+    junction = _Py_win_create_file(dst_path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
         OPEN_EXISTING,
         FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (junction == INVALID_HANDLE_VALUE)
@@ -1207,6 +1208,7 @@ cleanup:
     return ret;
 }
 
+#ifdef MS_WINDOWS_DESKTOP
 typedef struct {
     LPPROC_THREAD_ATTRIBUTE_LIST attribute_list;
     LPHANDLE handle_list;
@@ -1318,6 +1320,7 @@ cleanup:
 
     return ret;
 }
+#endif
 
 /*[clinic input]
 _winapi.CreateProcess
@@ -1351,6 +1354,9 @@ _winapi_CreateProcess_impl(PyObject *module, const wchar_t *application_name,
                            PyObject *startup_info)
 /*[clinic end generated code: output=a25c8e49ea1d6427 input=42ac293eaea03fc4]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     PyObject *ret = NULL;
     BOOL result;
     PROCESS_INFORMATION pi;
@@ -1432,6 +1438,7 @@ cleanup:
     freeattributelist(&attribute_list);
 
     return ret;
+#endif
 }
 
 /*[clinic input]
@@ -1732,7 +1739,19 @@ _winapi_GetVersion_impl(PyObject *module)
 #pragma warning(disable:4996)
 
 {
+#ifndef MS_WINDOWS_DESKTOP
+    OSVERSIONINFOW version_info;
+    ZeroMemory(&version_info, sizeof(version_info));
+    version_info.dwOSVersionInfoSize = sizeof(version_info);
+    if (GetVersionExW(&version_info)) {
+        return version_info.dwMinorVersion |
+            (version_info.dwMajorVersion << 8) |
+            (version_info.dwBuildNumber << 16);
+    }
+    return 0;
+#else
     return GetVersion();
+#endif
 }
 
 #pragma warning(pop)
@@ -2575,7 +2594,9 @@ error:
     while (--thread_count >= 0) {
         HANDLE t = thread_data[thread_count]->thread;
         if (t) {
+#ifdef MS_WINDOWS_DESKTOP
             TerminateThread(t, WAIT_ABANDONED_0);
+#endif
             CloseHandle(t);
         }
         PyMem_Free((void *)thread_data[thread_count]);
@@ -2769,7 +2790,11 @@ static PyObject *
 _winapi_GetOEMCP_impl(PyObject *module)
 /*[clinic end generated code: output=4def5b07a8be1b3b input=e8caf4353a28e28e]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     return PyLong_FromUnsignedLong(GetOEMCP());
+#endif
 }
 
 /*[clinic input]
@@ -2813,6 +2838,9 @@ _winapi__mimetypes_read_windows_registry_impl(PyObject *module,
                                               PyObject *on_type_read)
 /*[clinic end generated code: output=20829f00bebce55b input=cd357896d6501f68]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
 #define CCH_EXT 128
 #define CB_TYPE 510
     struct {
@@ -2902,6 +2930,7 @@ _winapi__mimetypes_read_windows_registry_impl(PyObject *module,
     Py_RETURN_NONE;
 #undef CCH_EXT
 #undef CB_TYPE
+#endif
 }
 
 /*[clinic input]

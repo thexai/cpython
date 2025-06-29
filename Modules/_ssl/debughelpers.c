@@ -199,11 +199,15 @@ _PySSLContext_set_keylog_filename(PyObject *op, PyObject *arg,
                      "cannot be deleted", Py_TYPE(op)->tp_name);
         return -1;
     }
-#if defined(MS_WINDOWS) && defined(Py_DEBUG)
+#if defined(MS_WINDOWS_APP) && !defined(MS_WINDOWS_DESKTOP)
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "set_keylog_filename: unavailable on UWP build");
+    return -1;
+#elif defined(MS_WINDOWS) && defined(_DEBUG)
     PyErr_SetString(PyExc_NotImplementedError,
                     "set_keylog_filename: unavailable on Windows debug build");
     return -1;
-#endif
+#else
 
     /* Reset variables and callback first */
     SSL_CTX_set_keylog_callback(self->ctx, NULL);
@@ -246,4 +250,5 @@ _PySSLContext_set_keylog_filename(PyObject *op, PyObject *arg,
     PySSL_END_ALLOW_THREADS(self)
     SSL_CTX_set_keylog_callback(self->ctx, _PySSL_keylog_callback);
     return 0;
+#endif
 }

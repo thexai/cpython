@@ -462,7 +462,7 @@ exit:
 
 #endif /* defined(HAVE_INET_NTOA) */
 
-#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS))
+#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS_DESKTOP))
 
 PyDoc_STRVAR(_socket_if_nametoindex__doc__,
 "if_nametoindex($module, oname, /)\n"
@@ -496,7 +496,7 @@ exit:
 
 #endif /* (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS)) */
 
-#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS))
+#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS_DESKTOP))
 
 PyDoc_STRVAR(_socket_if_indextoname__doc__,
 "if_indextoname($module, if_index, /)\n"
