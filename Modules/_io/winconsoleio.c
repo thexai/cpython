@@ -31,6 +31,8 @@
 
 #include "_iomodule.h"
 
+#include "internal/pycore_fileutils_windows.h"
+
 /* BUFSIZ determines how many characters can be typed at the console
    before it starts blocking. */
 #if BUFSIZ < (16*1024)
@@ -434,10 +436,10 @@ _io__WindowsConsoleIO___init___impl(winconsoleio *self, PyObject *nameobj,
            on the specific access. This is required for modern names
            CONIN$ and CONOUT$, which allow reading/writing state as
            well as reading/writing content. */
-        handle = CreateFileW(name, GENERIC_READ | GENERIC_WRITE,
+        handle = _Py_win_create_file(name, GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
         if (handle == INVALID_HANDLE_VALUE)
-            handle = CreateFileW(name, access,
+            handle = _Py_win_create_file(name, access,
                 FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
         Py_END_ALLOW_THREADS
 

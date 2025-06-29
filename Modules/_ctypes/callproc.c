@@ -252,6 +252,15 @@ set_errno(PyObject *self, PyObject *args)
 
 #ifdef MS_WIN32
 
+static PyObject*
+_GetLastError(PyObject* self, PyObject* args)
+{
+    if (PySys_Audit("ctypes.GetLastError", NULL) < 0) {
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(GetLastError());
+}
+
 static PyObject *
 get_last_error(PyObject *self, PyObject *args)
 {
@@ -1087,6 +1096,7 @@ error:
 
 #ifdef MS_WIN32
 
+#ifndef MS_WINDOWS_APP
 static PyObject *
 GetComError(ctypes_state *st, HRESULT errcode, GUID *riid, IUnknown *pIunk)
 {
@@ -1154,6 +1164,7 @@ GetComError(ctypes_state *st, HRESULT errcode, GUID *riid, IUnknown *pIunk)
 
     return NULL;
 }
+#endif
 #endif
 
 #if (defined(__x86_64__) && (defined(__MINGW64__) || defined(__CYGWIN__))) || \
@@ -1325,9 +1336,11 @@ PyObject *_ctypes_callproc(ctypes_state *st,
 
 #ifdef MS_WIN32
     if (iid && pIunk) {
+#ifndef MS_WINDOWS_APP
         if (*(int *)resbuf & 0x80000000)
             retval = GetComError(st, *(HRESULT *)resbuf, iid, pIunk);
         else
+#endif
             retval = PyLong_FromLong(*(int *)resbuf);
     } else if (flags & FUNCFLAG_HRESULT) {
         if (*(int *)resbuf & 0x80000000)
@@ -1404,10 +1417,20 @@ static PyObject *load_library(PyObject *self, PyObject *args)
         return NULL;
 
     Py_BEGIN_ALLOW_THREADS
+#ifdef MS_WINDOWS_APP
+    // LoadPackagedLibrary doesn't accept absolute paths so use
+    // the base path or DLL name
+    wchar_t* base_path = wcsstr(name, L"system");
+    if (base_path)
+        hMod = LoadPackagedLibrary(base_path, 0);
+    else
+        hMod = LoadPackagedLibrary(name, 0);
+#else
     /* bpo-36085: Limit DLL search directories to avoid pre-loading
      * attacks and enable use of the AddDllDirectory function.
      */
     hMod = LoadLibraryExW(name, NULL, (DWORD)load_flags);
+#endif
     err = hMod ? 0 : GetLastError();
     Py_END_ALLOW_THREADS
 
@@ -2099,6 +2122,7 @@ PyMethodDef _ctypes_module_methods[] = {
     {"buffer_info", buffer_info, METH_O, "Return buffer interface information"},
     {"resize", resize, METH_VARARGS, "Resize the memory buffer of a ctypes instance"},
 #ifdef MS_WIN32
+    {"GetLastError", _GetLastError, METH_NOARGS},
     {"get_last_error", get_last_error, METH_NOARGS},
     {"set_last_error", set_last_error, METH_VARARGS},
     {"CopyComPointer", copy_com_pointer, METH_VARARGS, copy_com_pointer_doc},

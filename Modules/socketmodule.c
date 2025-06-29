@@ -318,6 +318,10 @@ shutdown(how) -- shut down traffic in one or both directions\n\
 // For if_nametoindex() and if_indextoname()
 #include <iphlpapi.h>
 
+#ifndef RPC_S_OK
+#define RPC_S_OK 0L
+#endif
+
 /* remove some flags on older version Windows during run-time.
    https://msdn.microsoft.com/en-us/library/windows/desktop/ms738596.aspx */
 typedef struct {
@@ -5640,10 +5644,12 @@ socket_gethostname(PyObject *self, PyObject *unused)
        Otherwise, gethostname apparently also returns the DNS name. */
     wchar_t buf[MAX_COMPUTERNAME_LENGTH + 1];
     DWORD size = Py_ARRAY_LENGTH(buf);
-    wchar_t *name;
-    PyObject *result;
 
+#ifdef MS_WINDOWS_APP
+    if (GetComputerNameW(buf, &size))
+#else
     if (GetComputerNameExW(ComputerNamePhysicalDnsHostname, buf, &size))
+#endif
         return PyUnicode_FromWideChar(buf, size);
 
     if (GetLastError() != ERROR_MORE_DATA)
@@ -5652,9 +5658,12 @@ socket_gethostname(PyObject *self, PyObject *unused)
     if (size == 0)
         return PyUnicode_New(0, 0);
 
+#ifdef MS_WINDOWS_APP
+    return NULL;
+#else
     /* MSDN says ERROR_MORE_DATA may occur because DNS allows longer
        names */
-    name = PyMem_New(wchar_t, size);
+    wchar_t* name = PyMem_New(wchar_t, size);
     if (!name) {
         PyErr_NoMemory();
         return NULL;
@@ -5668,9 +5677,10 @@ socket_gethostname(PyObject *self, PyObject *unused)
         return NULL;
     }
 
-    result = PyUnicode_FromWideChar(name, size);
+    PyObject* result = PyUnicode_FromWideChar(name, size);
     PyMem_Free(name);
     return result;
+#endif
 #else
     char buf[1024];
     int res;
@@ -7007,7 +7017,7 @@ Set the default timeout in seconds (float) for new socket objects.\n\
 A value of None indicates that new socket objects have no timeout.\n\
 When the socket module is first imported, the default is None.");
 
-#if defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS)
+#if defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS_DESKTOP)
 /* Python API for getting interface indices and names */
 
 static PyObject *
@@ -7297,7 +7307,7 @@ static PyMethodDef socket_methods[] = {
      METH_NOARGS, getdefaulttimeout_doc},
     {"setdefaulttimeout",       socket_setdefaulttimeout,
      METH_O, setdefaulttimeout_doc},
-#if defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS)
+#if defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS_DESKTOP)
     {"if_nameindex", socket_if_nameindex,
      METH_NOARGS, if_nameindex_doc},
     _SOCKET_SOCKET_IF_NAMETOINDEX_METHODDEF
@@ -8933,10 +8943,12 @@ socket_exec(PyObject *m)
 #endif
 
 #ifdef MS_WINDOWS
+#ifndef MS_WINDOWS_APP
     /* remove some flags on older version Windows during run-time */
     if (remove_unusable_flags(m) < 0) {
         goto error;
     }
+#endif
 #endif
 
 #undef ADD_INT_MACRO

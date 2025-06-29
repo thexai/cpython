@@ -10,7 +10,7 @@
 
 // Include the manifest file that indicates we support all
 // current versions of Windows.
-2 RT_MANIFEST "python.manifest"
+// 2 RT_MANIFEST "python.manifest"
 
 /////////////////////////////////////////////////////////////////////////////
 //

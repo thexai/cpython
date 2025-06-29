@@ -88,6 +88,14 @@ WIN32 is still required for the locale module.
 #define MS_WINDOWS_GAMES
 #endif
 
+#if defined(MS_WINDOWS_DESKTOP)
+#undef MS_WINDOWS_APP
+#undef MS_WINDOWS_GAMES
+#elif defined(MS_WINDOWS_APP)
+#undef MS_WINDOWS_DESKTOP
+#undef MS_WINDOWS_GAMES
+#endif
+
 /* Define to 1 if you support windows console io */
 #if defined(MS_WINDOWS_DESKTOP) || defined(MS_WINDOWS_APP) || defined(MS_WINDOWS_SYSTEM)
 #define HAVE_WINDOWS_CONSOLE_IO 1
@@ -308,7 +316,7 @@ Py_NO_ENABLE_SHARED to find out.  Also support MS_NO_COREDLL for b/w compat */
 #define HAVE_DECLSPEC_DLL
 
 /* For an MSVC DLL, we can nominate the .lib files used by extensions */
-#ifdef MS_COREDLL
+#if 0
 #       if !defined(Py_BUILD_CORE) && !defined(Py_BUILD_CORE_BUILTIN)
                 /* not building the core - must be an ext */
 #               if defined(_MSC_VER)
@@ -372,7 +380,7 @@ Py_NO_ENABLE_SHARED to find out.  Also support MS_NO_COREDLL for b/w compat */
 #       define ALIGNOF_MAX_ALIGN_T 8
 #endif
 
-#ifdef _DEBUG
+#if 0
 #       define Py_DEBUG
 #endif
 

@@ -52,6 +52,7 @@ enum {
 /* This can already be defined on Windows to set the character set
    the Windows header files treat as default */
 #ifdef UNICODE
+#define REDEFINE_UNICODE 1
 #undef UNICODE
 #endif
 #endif
@@ -136,6 +137,11 @@ enum opcode {
     NEXT_BUFFER      = '\x97',
     READONLY_BUFFER  = '\x98'
 };
+
+#ifdef REDEFINE_UNICODE
+#define UNICODE 1
+#undef REDEFINE_UNICODE
+#endif
 
 enum {
    /* Keep in synch with pickle.Pickler._BATCHSIZE.  This is how many elements
