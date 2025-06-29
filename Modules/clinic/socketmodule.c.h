@@ -221,7 +221,7 @@ exit:
 
 #endif /* defined(HAVE_INET_NTOA) */
 
-#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS))
+#if (defined(HAVE_IF_NAMEINDEX) || defined(MS_WINDOWS_DESKTOP))
 
 PyDoc_STRVAR(_socket_socket_if_nametoindex__doc__,
 "if_nametoindex($self, oname, /)\n"

@@ -1735,7 +1735,6 @@ sys_getwindowsversion_impl(PyObject *module)
 {
     PyObject *version;
     int pos = 0;
-    OSVERSIONINFOEXW ver;
 
     if (PyObject_GetOptionalAttrString(module, "_cached_windows_version", &version) < 0) {
         return NULL;
@@ -1745,6 +1744,8 @@ sys_getwindowsversion_impl(PyObject *module)
     }
     Py_XDECREF(version);
 
+    OSVERSIONINFOEXW ver;
+    ZeroMemory(&ver, sizeof(ver));
     ver.dwOSVersionInfoSize = sizeof(ver);
     if (!GetVersionExW((OSVERSIONINFOW*) &ver))
         return PyErr_SetFromWindowsErr(0);
@@ -1772,6 +1773,7 @@ sys_getwindowsversion_impl(PyObject *module)
     SET_VERSION_INFO(PyLong_FromLong(ver.wSuiteMask));
     SET_VERSION_INFO(PyLong_FromLong(ver.wProductType));
 
+#ifndef MS_WINDOWS_APP
     // GetVersion will lie if we are running in a compatibility mode.
     // We need to read the version info from a system file resource
     // to accurately identify the OS version. If we fail for any reason,
@@ -1791,6 +1793,7 @@ sys_getwindowsversion_impl(PyObject *module)
     }
 
     SET_VERSION_INFO(realVersion);
+#endif
 
 #undef SET_VERSION_INFO
 

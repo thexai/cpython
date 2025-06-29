@@ -62,7 +62,7 @@ class MetaPathFinder(metaclass=abc.ABCMeta):
         """
 
 _register(MetaPathFinder, machinery.BuiltinImporter, machinery.FrozenImporter,
-          machinery.PathFinder, machinery.WindowsRegistryFinder)
+          machinery.PathFinder)
 
 
 class PathEntryFinder(metaclass=abc.ABCMeta):
