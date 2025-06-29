@@ -22,6 +22,10 @@
 #include <rpc.h>
 #endif
 
+#ifndef RPC_S_OK
+#define RPC_S_OK 0L
+#endif
+
 #ifndef MS_WINDOWS
 
 static PyObject *

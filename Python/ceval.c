@@ -446,7 +446,9 @@ hardware_stack_limits(uintptr_t *base, uintptr_t *top, uintptr_t sp)
     GetCurrentThreadStackLimits(&low, &high);
     *top = (uintptr_t)high;
     ULONG guarantee = 0;
+#ifndef MS_WINDOWS_APP
     SetThreadStackGuarantee(&guarantee);
+#endif
     *base = (uintptr_t)low + guarantee;
 #elif defined(__APPLE__)
     pthread_t this_thread = pthread_self();

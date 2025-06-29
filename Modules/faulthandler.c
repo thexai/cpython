@@ -564,8 +564,10 @@ faulthandler_enable(void)
     }
 
 #ifdef MS_WINDOWS
+#ifndef MS_WINDOWS_APP
     assert(fatal_error.exc_handler == NULL);
     fatal_error.exc_handler = AddVectoredExceptionHandler(1, faulthandler_exc_handler);
+#endif
 #endif
     return 0;
 }
@@ -619,10 +621,12 @@ faulthandler_disable(void)
         }
     }
 #ifdef MS_WINDOWS
+#ifndef MS_WINDOWS_APP
     if (fatal_error.exc_handler != NULL) {
         RemoveVectoredExceptionHandler(fatal_error.exc_handler);
         fatal_error.exc_handler = NULL;
     }
+#endif
 #endif
     Py_CLEAR(fatal_error.file);
 }

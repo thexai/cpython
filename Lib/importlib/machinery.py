@@ -8,7 +8,6 @@ from ._bootstrap_external import (
     DEBUG_BYTECODE_SUFFIXES as _DEBUG_BYTECODE_SUFFIXES,
     OPTIMIZED_BYTECODE_SUFFIXES as _OPTIMIZED_BYTECODE_SUFFIXES
 )
-from ._bootstrap_external import WindowsRegistryFinder
 from ._bootstrap_external import PathFinder
 from ._bootstrap_external import FileFinder
 from ._bootstrap_external import SourceFileLoader

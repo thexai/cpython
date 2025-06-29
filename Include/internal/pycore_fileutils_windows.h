@@ -55,7 +55,11 @@ static inline BOOL _Py_GetFileInformationByName(
     static int GetFileInformationByName_init = -1;
 
     if (GetFileInformationByName_init < 0) {
+#ifdef MS_WINDOWS_APP
+        HMODULE hMod = LoadPackagedLibrary(L"api-ms-win-core-file-l2-1-4", 0);
+#else
         HMODULE hMod = LoadLibraryW(L"api-ms-win-core-file-l2-1-4");
+#endif
         GetFileInformationByName_init = 0;
         if (hMod) {
             GetFileInformationByName = (PGetFileInformationByName)GetProcAddress(
@@ -94,5 +98,44 @@ static inline BOOL _Py_GetFileInformationByName_ErrorIsTrustworthy(int error)
 }
 
 #endif
+
+static inline HANDLE _Py_win_create_file(
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD dwDesiredAccess,
+    _In_ DWORD dwShareMode,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    _In_ DWORD dwCreationDisposition,
+    _In_ DWORD dwFlagsAndAttributes,
+    _In_opt_ HANDLE hTemplateFile
+)
+{
+#ifdef MS_WINDOWS_APP
+    if (dwShareMode == 0)
+        dwShareMode = FILE_SHARE_READ;
+
+    const DWORD flagsMask = 0xFFFF0000;
+
+    CREATEFILE2_EXTENDED_PARAMETERS ext;
+    ZeroMemory(&ext, sizeof(CREATEFILE2_EXTENDED_PARAMETERS));
+    ext.dwSize = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
+    ext.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+    ext.dwFileFlags = dwFlagsAndAttributes & flagsMask;
+
+    // if path is absolute convert to base path
+    if (wcschr(lpFileName, L':')) {
+        wchar_t* base_path = wcsstr(lpFileName, L"system");
+        if (base_path) {
+            return CreateFile2(base_path, dwDesiredAccess, dwShareMode, dwCreationDisposition, &ext);
+        }
+    }
+
+    return CreateFile2(lpFileName, dwDesiredAccess, dwShareMode, dwCreationDisposition, &ext);
+#else
+    return CreateFileW(lpFileName, dwDesiredAccess,
+        dwShareMode, lpSecurityAttributes,
+        dwCreationDisposition, dwFlagsAndAttributes,
+        hTemplateFile);
+#endif
+}
 
 #endif
