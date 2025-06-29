@@ -190,7 +190,11 @@ _PySSLContext_set_keylog_filename(PyObject *op, PyObject *arg,
                      "cannot be deleted", Py_TYPE(op)->tp_name);
         return -1;
     }
-#if defined(MS_WINDOWS) && defined(_DEBUG)
+#if defined(MS_WINDOWS_APP) && !defined(MS_WINDOWS_DESKTOP)
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "set_keylog_filename: unavailable on UWP build");
+    return -1;
+#elif defined(MS_WINDOWS) && defined(_DEBUG)
     PyErr_SetString(PyExc_NotImplementedError,
                     "set_keylog_filename: unavailable on Windows debug build");
     return -1;

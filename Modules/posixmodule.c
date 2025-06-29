@@ -800,9 +800,9 @@ PyOS_AfterFork(void)
 #ifdef MS_WINDOWS
 /* defined in fileutils.c */
 void _Py_time_t_to_FILE_TIME(time_t, int, FILETIME *);
-void _Py_attribute_data_to_stat(BY_HANDLE_FILE_INFORMATION *, ULONG,
-                                FILE_BASIC_INFO *, FILE_ID_INFO *,
-                                struct _Py_stat_struct *);
+void _Py_attribute_data_to_stat(FILE_STANDARD_INFO*, ULONG,
+                                FILE_BASIC_INFO*, FILE_ID_INFO*,
+                                struct _Py_stat_struct*);
 void _Py_stat_basic_info_to_stat(FILE_STAT_BASIC_INFORMATION *,
                                  struct _Py_stat_struct *);
 #endif
@@ -2001,17 +2001,23 @@ is_extended_path(const wchar_t *path)
 
 static void
 find_data_to_file_info(WIN32_FIND_DATAW *pFileData,
-                       BY_HANDLE_FILE_INFORMATION *info,
+                       FILE_BASIC_INFO* basic_info,
+                       FILE_STANDARD_INFO* standard_info,
                        ULONG *reparse_tag)
 {
-    memset(info, 0, sizeof(*info));
-    info->dwFileAttributes = pFileData->dwFileAttributes;
-    info->ftCreationTime   = pFileData->ftCreationTime;
-    info->ftLastAccessTime = pFileData->ftLastAccessTime;
-    info->ftLastWriteTime  = pFileData->ftLastWriteTime;
-    info->nFileSizeHigh    = pFileData->nFileSizeHigh;
-    info->nFileSizeLow     = pFileData->nFileSizeLow;
-/*  info->nNumberOfLinks   = 1; */
+    memset(basic_info, 0, sizeof(*basic_info));
+    memset(standard_info, 0, sizeof(*standard_info));
+
+    basic_info->FileAttributes = pFileData->dwFileAttributes;
+    basic_info->CreationTime.HighPart = pFileData->ftCreationTime.dwHighDateTime;
+    basic_info->CreationTime.LowPart = pFileData->ftCreationTime.dwLowDateTime;
+    basic_info->LastAccessTime.HighPart = pFileData->ftLastAccessTime.dwHighDateTime;
+    basic_info->LastAccessTime.LowPart = pFileData->ftLastAccessTime.dwLowDateTime;
+    basic_info->LastWriteTime.HighPart = pFileData->ftLastWriteTime.dwHighDateTime;
+    basic_info->LastWriteTime.LowPart = pFileData->ftLastWriteTime.dwLowDateTime;
+    standard_info->EndOfFile.HighPart = pFileData->nFileSizeHigh;
+    standard_info->EndOfFile.LowPart = pFileData->nFileSizeLow;
+
     if (pFileData->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
         *reparse_tag = pFileData->dwReserved0;
     else
@@ -2019,7 +2025,7 @@ find_data_to_file_info(WIN32_FIND_DATAW *pFileData,
 }
 
 static BOOL
-attributes_from_dir(LPCWSTR pszFile, BY_HANDLE_FILE_INFORMATION *info, ULONG *reparse_tag)
+attributes_from_dir(LPCWSTR pszFile, FILE_BASIC_INFO *basic_info, FILE_STANDARD_INFO* standard_info, ULONG *reparse_tag)
 {
     HANDLE hFindFile;
     WIN32_FIND_DATAW FileData;
@@ -2050,7 +2056,7 @@ attributes_from_dir(LPCWSTR pszFile, BY_HANDLE_FILE_INFORMATION *info, ULONG *re
         return FALSE;
     }
     FindClose(hFindFile);
-    find_data_to_file_info(&FileData, info, reparse_tag);
+    find_data_to_file_info(&FileData, basic_info, standard_info, reparse_tag);
     return TRUE;
 }
 
@@ -2092,10 +2098,9 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
                       BOOL traverse)
 {
     HANDLE hFile;
-    BY_HANDLE_FILE_INFORMATION fileInfo;
-    FILE_BASIC_INFO basicInfo;
-    FILE_BASIC_INFO *pBasicInfo = NULL;
-    FILE_ID_INFO idInfo;
+    FILE_STANDARD_INFO standardInfo = {0};
+    FILE_BASIC_INFO basicInfo = {0};
+    FILE_ID_INFO idInfo = {0};
     FILE_ID_INFO *pIdInfo = NULL;
     FILE_ATTRIBUTE_TAG_INFO tagInfo = { 0 };
     DWORD fileType, error;
@@ -2108,7 +2113,7 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
         flags |= FILE_FLAG_OPEN_REPARSE_POINT;
     }
 
-    hFile = CreateFileW(path, access, 0, NULL, OPEN_EXISTING, flags, NULL);
+    hFile = _Py_win_create_file(path, access, 0, NULL, OPEN_EXISTING, flags, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         /* Either the path doesn't exist, or the caller lacks access. */
         error = GetLastError();
@@ -2116,7 +2121,7 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
         case ERROR_ACCESS_DENIED:     /* Cannot sync or read attributes. */
         case ERROR_SHARING_VIOLATION: /* It's a paging file. */
             /* Try reading the parent directory. */
-            if (!attributes_from_dir(path, &fileInfo, &tagInfo.ReparseTag)) {
+            if (!attributes_from_dir(path, &basicInfo, &standardInfo, &tagInfo.ReparseTag)) {
                 /* Cannot read the parent directory. */
                 switch (GetLastError()) {
                 case ERROR_FILE_NOT_FOUND: /* File cannot be found */
@@ -2131,7 +2136,7 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
 
                 return -1;
             }
-            if (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            if (basicInfo.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 if (traverse ||
                     !IsReparseTagNameSurrogate(tagInfo.ReparseTag)) {
                     /* The stat call has to traverse but cannot, so fail. */
@@ -2143,7 +2148,7 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
 
         case ERROR_INVALID_PARAMETER:
             /* \\.\con requires read or write access. */
-            hFile = CreateFileW(path, access | GENERIC_READ,
+            hFile = _Py_win_create_file(path, access | GENERIC_READ,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                         OPEN_EXISTING, flags, NULL);
             if (hFile == INVALID_HANDLE_VALUE) {
@@ -2157,7 +2162,7 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
             if (traverse) {
                 traverse = FALSE;
                 isUnhandledTag = TRUE;
-                hFile = CreateFileW(path, access, 0, NULL, OPEN_EXISTING,
+                hFile = _Py_win_create_file(path, access, 0, NULL, OPEN_EXISTING,
                             flags | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
             }
             if (hFile == INVALID_HANDLE_VALUE) {
@@ -2231,9 +2236,8 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
             }
         }
 
-        if (!GetFileInformationByHandle(hFile, &fileInfo) ||
-            !GetFileInformationByHandleEx(hFile, FileBasicInfo,
-                                          &basicInfo, sizeof(basicInfo))) {
+        if (!GetFileInformationByHandleEx(hFile, FileStandardInfo, &standardInfo, sizeof(standardInfo)) ||
+            !GetFileInformationByHandleEx(hFile, FileBasicInfo, &basicInfo, sizeof(basicInfo))) {
             switch (GetLastError()) {
             case ERROR_INVALID_PARAMETER:
             case ERROR_INVALID_FUNCTION:
@@ -2248,17 +2252,14 @@ win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
             goto cleanup;
         }
 
-        /* Successfully got FileBasicInfo, so we'll pass it along */
-        pBasicInfo = &basicInfo;
-
         if (GetFileInformationByHandleEx(hFile, FileIdInfo, &idInfo, sizeof(idInfo))) {
             /* Successfully got FileIdInfo, so pass it along */
             pIdInfo = &idInfo;
         }
     }
 
-    _Py_attribute_data_to_stat(&fileInfo, tagInfo.ReparseTag, pBasicInfo, pIdInfo, result);
-    update_st_mode_from_path(path, fileInfo.dwFileAttributes, result);
+    _Py_attribute_data_to_stat(&standardInfo, tagInfo.ReparseTag, &basicInfo, pIdInfo, result);
+    update_st_mode_from_path(path, basicInfo.FileAttributes, result);
 
 cleanup:
     if (hFile != INVALID_HANDLE_VALUE) {
@@ -3684,7 +3685,7 @@ os_chmod_impl(PyObject *module, path_t *path, int mode, int dir_fd,
         result = win32_fchmod(path->fd, mode);
     }
     else if (follow_symlinks) {
-        HANDLE hfile = CreateFileW(path->wide,
+        HANDLE hfile = _Py_win_create_file(path->wide,
                                    FILE_READ_ATTRIBUTES|FILE_WRITE_ATTRIBUTES,
                                    0, NULL,
                                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -4736,6 +4737,9 @@ static PyObject *
 os_listdrives_impl(PyObject *module)
 /*[clinic end generated code: output=aaece9dacdf682b5 input=1af9ccc9e583798e]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     /* Number of possible drives is limited, so 256 should always be enough.
        On the day when it is not, listmounts() will have to be used. */
     wchar_t buffer[256];
@@ -4768,6 +4772,7 @@ os_listdrives_impl(PyObject *module)
         Py_DECREF(str);
     }
     return result;
+#endif
 }
 
 /*[clinic input]
@@ -4783,6 +4788,9 @@ static PyObject *
 os_listvolumes_impl(PyObject *module)
 /*[clinic end generated code: output=534e10ea2bf9d386 input=f6e4e70371f11e99]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     PyObject *result = PyList_New(0);
     HANDLE find = INVALID_HANDLE_VALUE;
     wchar_t buffer[MAX_PATH + 1];
@@ -4829,6 +4837,7 @@ os_listvolumes_impl(PyObject *module)
         result = NULL;
     }
     return result;
+#endif
 }
 
 
@@ -4847,6 +4856,9 @@ static PyObject *
 os_listmounts_impl(PyObject *module, path_t *volume)
 /*[clinic end generated code: output=06da49679de4512e input=a8a27178e3f67845]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     wchar_t default_buffer[MAX_PATH + 1];
     DWORD buflen = Py_ARRAY_LENGTH(default_buffer);
     LPWSTR buffer = default_buffer;
@@ -4909,6 +4921,7 @@ exit:
     Py_XDECREF(nullchar);
     Py_XDECREF(str);
     return result;
+#endif
 }
 
 
@@ -4925,6 +4938,9 @@ static PyObject *
 os__path_isdevdrive_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=1f437ea6677433a2 input=ee83e4996a48e23d]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
 #ifndef PERSISTENT_VOLUME_STATE_DEV_VOLUME
     /* This flag will be documented at
        https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_fs_persistent_volume_information
@@ -4949,7 +4965,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
         /* only care about local dev drives */
         r = Py_False;
     } else {
-        HANDLE hVolume = CreateFileW(
+        HANDLE hVolume = _Py_win_create_file(
             volume,
             FILE_READ_ATTRIBUTES,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -4998,6 +5014,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
     }
 
     return NULL;
+#endif
 }
 
 
@@ -5097,7 +5114,7 @@ os__getfinalpathname_impl(PyObject *module, path_t *path)
     PyObject *result;
 
     Py_BEGIN_ALLOW_THREADS
-    hFile = CreateFileW(
+    hFile = _Py_win_create_file(
         path->wide,
         0, /* desired access */
         0, /* share mode */
@@ -5199,6 +5216,9 @@ static PyObject *
 os__getvolumepathname_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=804c63fd13a1330b input=722b40565fa21552]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return NULL;
+#else
     PyObject *result;
     wchar_t *mountpath=NULL;
     size_t buflen;
@@ -5232,6 +5252,7 @@ os__getvolumepathname_impl(PyObject *module, path_t *path)
 exit:
     PyMem_Free(mountpath);
     return result;
+#endif
 }
 
 
@@ -5370,7 +5391,7 @@ _testFileTypeByName(LPCWSTR path, int testedType)
     if (testedType != PY_IFREG && testedType != PY_IFDIR) {
         flags |= FILE_FLAG_OPEN_REPARSE_POINT;
     }
-    HANDLE hfile = CreateFileW(path, FILE_READ_ATTRIBUTES, 0, NULL,
+    HANDLE hfile = _Py_win_create_file(path, FILE_READ_ATTRIBUTES, 0, NULL,
                                OPEN_EXISTING, flags, NULL);
     if (hfile != INVALID_HANDLE_VALUE) {
         BOOL result = _testFileTypeByHandle(hfile, testedType, FALSE);
@@ -5426,7 +5447,7 @@ _testFileExistsByName(LPCWSTR path, BOOL followLinks)
     if (!followLinks) {
         flags |= FILE_FLAG_OPEN_REPARSE_POINT;
     }
-    HANDLE hfile = CreateFileW(path, FILE_READ_ATTRIBUTES, 0, NULL,
+    HANDLE hfile = _Py_win_create_file(path, FILE_READ_ATTRIBUTES, 0, NULL,
                                OPEN_EXISTING, flags, NULL);
     if (hfile != INVALID_HANDLE_VALUE) {
         if (followLinks) {
@@ -5439,7 +5460,7 @@ _testFileExistsByName(LPCWSTR path, BOOL followLinks)
         if (!result) {
             return TRUE;
         }
-        hfile = CreateFileW(path, FILE_READ_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
+        hfile = _Py_win_create_file(path, FILE_READ_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
                             FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (hfile != INVALID_HANDLE_VALUE) {
             CloseHandle(hfile);
@@ -6729,7 +6750,7 @@ os_utime_impl(PyObject *module, path_t *path, PyObject *times, PyObject *ns,
 
 #ifdef MS_WINDOWS
     Py_BEGIN_ALLOW_THREADS
-    hFile = CreateFileW(path->wide, FILE_WRITE_ATTRIBUTES, 0,
+    hFile = _Py_win_create_file(path->wide, FILE_WRITE_ATTRIBUTES, 0,
                         NULL, OPEN_EXISTING,
                         FILE_FLAG_BACKUP_SEMANTICS, NULL);
     Py_END_ALLOW_THREADS
@@ -9495,6 +9516,7 @@ os_setpgrp_impl(PyObject *module)
 #include <winternl.h>
 #include <ProcessSnapshot.h>
 
+#ifdef MS_WINDOWS_DESKTOP
 // The structure definition in winternl.h may be incomplete.
 // This structure is the full version from the MSDN documentation.
 typedef struct _PROCESS_BASIC_INFORMATION_FULL {
@@ -9567,6 +9589,7 @@ win32_getppid_fast(void)
     cached_ppid = (ULONG) basic_information.InheritedFromUniqueProcessId;
     return cached_ppid;
 }
+#endif // MS_WINDOWS_DESKTOP
 
 static PyObject*
 win32_getppid(void)
@@ -9575,12 +9598,13 @@ win32_getppid(void)
     PyObject* result = NULL;
     HANDLE process = GetCurrentProcess();
     HPSS snapshot = NULL;
-    ULONG pid;
 
-    pid = win32_getppid_fast();
+#ifdef MS_WINDOWS_DESKTOP
+    ULONG pid = win32_getppid_fast();
     if (pid != 0) {
         return PyLong_FromUnsignedLong(pid);
     }
+#endif
 
     // If failure occurs in win32_getppid_fast(), fall back to using the PSS API.
 
@@ -10488,7 +10512,7 @@ os_readlink_impl(PyObject *module, path_t *path, int dir_fd)
 
     /* First get a handle to the reparse point */
     Py_BEGIN_ALLOW_THREADS
-    reparse_point_handle = CreateFileW(
+    reparse_point_handle = _Py_win_create_file(
         path->wide,
         0,
         0,
@@ -14751,6 +14775,7 @@ os_abort_impl(PyObject *module)
 }
 
 #ifdef MS_WINDOWS
+#ifdef MS_WINDOWS_DESKTOP
 /* Grab ShellExecute dynamically from shell32 */
 static int has_ShellExecute = -1;
 static HINSTANCE (CALLBACK *Py_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR,
@@ -14779,6 +14804,7 @@ check_ShellExecute(void)
     }
     return has_ShellExecute;
 }
+#endif // MS_WINDOWS_DESKTOP
 
 
 /*[clinic input]
@@ -14823,6 +14849,10 @@ os_startfile_impl(PyObject *module, path_t *filepath,
                   path_t *cwd, int show_cmd)
 /*[clinic end generated code: output=1c6f2f3340e31ffa input=8248997b80669622]*/
 {
+#ifndef MS_WINDOWS_DESKTOP
+    return PyErr_Format(PyExc_NotImplementedError,
+        "startfile not available on this platform");
+#else
     HINSTANCE rc;
 
     if(!check_ShellExecute()) {
@@ -14851,6 +14881,7 @@ os_startfile_impl(PyObject *module, path_t *filepath,
         return NULL;
     }
     Py_RETURN_NONE;
+#endif
 }
 #endif /* MS_WINDOWS */
 
@@ -15531,7 +15562,9 @@ os_cpu_count_impl(PyObject *module)
 # ifdef MS_WINDOWS_DESKTOP
     ncpu = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
 # else
-    ncpu = 0;
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    ncpu = sysinfo.dwNumberOfProcessors;
 # endif
 
 #elif defined(__hpux)
@@ -16189,7 +16222,8 @@ static PyObject *
 DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
 {
     DirEntry *entry;
-    BY_HANDLE_FILE_INFORMATION file_info;
+    FILE_BASIC_INFO basic_info;
+    FILE_STANDARD_INFO standard_info;
     ULONG reparse_tag;
     wchar_t *joined_path;
 
@@ -16227,8 +16261,8 @@ DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
             goto error;
     }
 
-    find_data_to_file_info(dataW, &file_info, &reparse_tag);
-    _Py_attribute_data_to_stat(&file_info, reparse_tag, NULL, NULL, &entry->win32_lstat);
+    find_data_to_file_info(dataW, &basic_info, &standard_info, &reparse_tag);
+    _Py_attribute_data_to_stat(&standard_info, reparse_tag, &basic_info, NULL, &entry->win32_lstat);
 
     /* ctime is only deprecated from 3.12, so we copy birthtime across */
     entry->win32_lstat.st_ctime = entry->win32_lstat.st_birthtime;
