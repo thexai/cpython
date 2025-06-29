@@ -72,10 +72,17 @@ static void more_core(void)
 
     /* allocate a memory block */
 #ifdef MS_WIN32
-    item = (ITEM *)VirtualAlloc(NULL,
-                                           count * sizeof(ITEM),
-                                           MEM_COMMIT,
-                                           PAGE_EXECUTE_READWRITE);
+#ifndef MS_WINDOWS_DESKTOP
+    item = (ITEM*)VirtualAlloc(NULL,
+                               count * sizeof(ITEM),
+                               MEM_COMMIT | MEM_RESERVE,
+                               PAGE_READWRITE);
+#else
+    item = (ITEM*)VirtualAlloc(NULL,
+                               count * sizeof(ITEM),
+                               MEM_COMMIT,
+                               PAGE_EXECUTE_READWRITE);
+#endif
     if (item == NULL)
         return;
 #else
