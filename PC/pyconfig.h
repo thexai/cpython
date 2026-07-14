@@ -95,7 +95,7 @@ WIN32 is still required for the locale module.
 #endif /* Py_BUILD_CORE || Py_BUILD_CORE_BUILTIN || Py_BUILD_CORE_MODULE */
 
 /* _DEBUG implies Py_DEBUG */
-#ifdef _DEBUG
+#if 0
 #  define Py_DEBUG 1
 #endif
 
@@ -320,6 +320,7 @@ Py_NO_ENABLE_SHARED to find out.  Also support MS_NO_COREDLL for b/w compat */
 /* Automatic linking of extension python3x.lib files for MSVC DLLs.
    This lets MSVC users build extensions without manually specifying .lib files.
    Define Py_NO_LINK_LIB to disable this behavior. */
+#if 0
 #if !defined(Py_NO_LINK_LIB) \
     && defined(_MSC_VER) && defined(Py_ENABLE_SHARED) \
     && !defined(Py_BUILD_CORE) && !defined(Py_BUILD_CORE_BUILTIN)
@@ -343,6 +344,7 @@ Py_NO_ENABLE_SHARED to find out.  Also support MS_NO_COREDLL for b/w compat */
 #               pragma comment(lib,"python316.lib")
 #           endif /* Py_DEBUG */
 #       endif /* Py_GIL_DISABLED */
+#endif
 #endif
 
 #ifdef MS_WIN64
