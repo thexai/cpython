@@ -925,7 +925,8 @@ add_py_module(NAME _ctypes
     ${CMAKE_CURRENT_SOURCE_DIR}/Modules/_ctypes/malloc_closure.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Modules/_ctypes/stgdict.c
   DEFINITIONS
-    FFI_BUILDING #USING_MALLOC_CLOSURE_DOT_C=1
+    FFI_BUILDING
+    USING_MALLOC_CLOSURE_DOT_C=1
   LIBRARIES
     libffi::libffi
     OleAut32.lib

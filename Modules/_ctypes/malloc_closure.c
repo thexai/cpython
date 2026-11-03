@@ -27,6 +27,50 @@
 
 /******************************************************************/
 
+#if defined(MS_WIN32) && !defined(MS_WINDOWS_DESKTOP)
+/* UWP does not allow memory to be writable and executable at the same time:
+   VirtualAllocFromApp() rejects PAGE_EXECUTE_READWRITE.  Instead, each
+   closure gets its own page, which is allocated as PAGE_READWRITE so that
+   ffi_prep_closure_loc() can write the trampoline, and is then switched to
+   PAGE_EXECUTE_READ by Py_ffi_closure_make_executable().  Using one page
+   per closure ensures that changing the protection never affects another
+   closure which may be executing concurrently.  This requires the
+   "codeGeneration" capability in the application manifest. */
+
+void Py_ffi_closure_free(void *p)
+{
+    VirtualFree(p, 0, MEM_RELEASE);
+}
+
+void *Py_ffi_closure_alloc(size_t size, void** codeloc)
+{
+    void *p = VirtualAllocFromApp(NULL, size, MEM_COMMIT | MEM_RESERVE,
+                                  PAGE_READWRITE);
+    if (p == NULL) {
+        return NULL;
+    }
+#ifdef _M_ARM
+    // set Thumb bit so that blx is called correctly
+    *codeloc = (void *)((uintptr_t)p | 1);
+#else
+    *codeloc = p;
+#endif
+    return p;
+}
+
+int Py_ffi_closure_make_executable(void *p, size_t size)
+{
+    ULONG old_protect;
+    if (!VirtualProtectFromApp(p, size, PAGE_EXECUTE_READ, &old_protect)
+        || !FlushInstructionCache(GetCurrentProcess(), p, size))
+    {
+        PyErr_SetFromWindowsErr(0);
+        return -1;
+    }
+    return 0;
+}
+
+#else /* MS_WINDOWS_DESKTOP or not MS_WIN32 */
 
 #ifdef Py_GIL_DISABLED
 static PyMutex malloc_closure_lock;
@@ -72,17 +116,10 @@ static void more_core(void)
 
     /* allocate a memory block */
 #ifdef MS_WIN32
-#ifndef MS_WINDOWS_DESKTOP
-    item = (ITEM*)VirtualAlloc(NULL,
-                               count * sizeof(ITEM),
-                               MEM_COMMIT | MEM_RESERVE,
-                               PAGE_READWRITE);
-#else
     item = (ITEM*)VirtualAlloc(NULL,
                                count * sizeof(ITEM),
                                MEM_COMMIT,
                                PAGE_EXECUTE_READWRITE);
-#endif
     if (item == NULL)
         return;
 #else
@@ -170,3 +207,5 @@ void *Py_ffi_closure_alloc(size_t size, void** codeloc)
     MALLOC_CLOSURE_UNLOCK();
     return (void *)item;
 }
+
+#endif /* MS_WINDOWS_DESKTOP or not MS_WIN32 */
